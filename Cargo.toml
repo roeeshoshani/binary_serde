@@ -1,0 +1,12 @@
+[package]
+name = "binary_serde"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = ["binary_serde_macros"]
+
+[dependencies]
+binary_serde_macros = { path = "binary_serde_macros" }
