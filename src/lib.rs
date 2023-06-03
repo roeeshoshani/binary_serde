@@ -43,6 +43,9 @@ pub trait BinarySerdeInternal: Sized {
     /// returns the serialized size.
     fn binary_serialize_min_internal(&self, buf: &mut [u8], endianness: Endianness) -> usize;
 
+    /// calculates the size of this value when serialized to its minimal binary representation
+    fn binary_serialized_size_internal(&self) -> usize;
+
     /// deserializes a binary representation of this type.
     /// the length of `buf` must be exactly equal to `Self::MAX_SERIALIZED_SIZE_INTERNAL`.
     /// the `index_in_buf` parameter is the current index of the passed buffer inside of the larger buffer that is being parsed
@@ -84,6 +87,11 @@ pub trait BinarySerde: BinarySerdeInternal {
         &buf[..serialized_size]
     }
 
+    /// calculates the size of this value when serialized to its minimal binary representation
+    fn binary_serialized_size(&self) -> usize {
+        self.binary_serialized_size_internal()
+    }
+
     /// deserializes a binary representation of this type.
     /// the length of `buf` must be exactly equal to `Self::MAX_SERIALIZED_SIZE`.
     fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Result<Self, Error> {
@@ -117,6 +125,9 @@ macro_rules! impl_serialize_for_primitive_int_types {
                     Self::MAX_SERIALIZED_SIZE_INTERNAL
                 }
 
+                fn binary_serialized_size_internal(&self) -> usize {
+                    Self::MAX_SERIALIZED_SIZE_INTERNAL
+                }
 
                 fn binary_deserialize_internal(buf: &[u8], endianness: Endianness, _index_in_buf: usize) -> Result<Self, Error> {
                     let bytes_array: [u8; core::mem::size_of::<Self>()] = buf.try_into().unwrap();
@@ -141,6 +152,39 @@ macro_rules! impl_serialize_for_primitive_int_types {
 
 impl_serialize_for_primitive_int_types! {u8,u16,u32,u64,u128,i8,i16,i32,i64,i128}
 
+impl BinarySerdeInternal for bool {
+    const MAX_SERIALIZED_SIZE_INTERNAL: usize = 1;
+
+    fn binary_serialize_internal(&self, buf: &mut [u8], _endianness: Endianness) {
+        buf[0] = if *self { 1 } else { 0 }
+    }
+
+    fn binary_serialize_min_internal(&self, buf: &mut [u8], endianness: Endianness) -> usize {
+        self.binary_serialize_internal(buf, endianness);
+        Self::MAX_SERIALIZED_SIZE_INTERNAL
+    }
+
+    fn binary_serialized_size_internal(&self) -> usize {
+        Self::MAX_SERIALIZED_SIZE_INTERNAL
+    }
+
+    fn binary_deserialize_internal(
+        buf: &[u8],
+        _endianness: Endianness,
+        _index_in_buf: usize,
+    ) -> Result<Self, Error> {
+        Ok(buf[0] != 0)
+    }
+
+    fn binary_deserialize_min_internal(
+        buf: &[u8],
+        _endianness: Endianness,
+        _index_in_buf: usize,
+    ) -> Result<(Self, usize), Error> {
+        Ok((buf[0] != 0, Self::MAX_SERIALIZED_SIZE_INTERNAL))
+    }
+}
+
 impl<T: BinarySerdeInternal, const SIZE: usize> BinarySerdeInternal for [T; SIZE] {
     const MAX_SERIALIZED_SIZE_INTERNAL: usize = SIZE * T::MAX_SERIALIZED_SIZE_INTERNAL;
 
@@ -163,6 +207,12 @@ impl<T: BinarySerdeInternal, const SIZE: usize> BinarySerdeInternal for [T; SIZE
             cur_index_in_buf += item_serialized_size;
         }
         cur_index_in_buf
+    }
+
+    fn binary_serialized_size_internal(&self) -> usize {
+        self.iter()
+            .map(|item| item.binary_serialized_size_internal())
+            .sum()
     }
 
     fn binary_deserialize_internal(
@@ -208,6 +258,10 @@ impl<T> BinarySerdeInternal for PhantomData<T> {
     fn binary_serialize_internal(&self, _buf: &mut [u8], _endianness: Endianness) {}
 
     fn binary_serialize_min_internal(&self, _buf: &mut [u8], _endianness: Endianness) -> usize {
+        0
+    }
+
+    fn binary_serialized_size_internal(&self) -> usize {
         0
     }
 
