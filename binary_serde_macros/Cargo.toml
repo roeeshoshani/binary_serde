@@ -2,6 +2,12 @@
 name = "binary_serde_macros"
 version = "0.1.0"
 edition = "2021"
+authors = ["Roee Shoshani"]
+description = "simple binary serialization and deserialization"
+repository = "https://github.com/roeeshoshani/binary_serde"
+license = "MIT"
+keywords = ["binary", "serialization", "deserialization", "serde", "format"]
+categories = ["embedded", "encoding", "no-std", "parsing"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

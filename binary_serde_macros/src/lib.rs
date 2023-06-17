@@ -18,6 +18,7 @@ pub fn derive_binary_serde(input_tokens: proc_macro::TokenStream) -> proc_macro:
     }
 }
 
+/// derives the core trait for an enum
 fn derive_binary_serde_for_enum(
     derive_input: &DeriveInput,
     data_enum: &DataEnum,
@@ -169,9 +170,9 @@ fn derive_binary_serde_for_enum(
             match tag {
                 #(#deserialization_variant_branches,)*
                 _ => {
-                    ::core::result::Result::Err(::binary_serde::Error {
-                        kind: ::binary_serde::ErrorKind::InvalidEnumTag { enum_name: #enum_name_str },
-                        span: ::binary_serde::ErrorSpan {
+                    ::core::result::Result::Err(::binary_serde::DeserializeError {
+                        kind: ::binary_serde::DeserializeErrorKind::InvalidEnumTag { enum_name: #enum_name_str },
+                        span: ::binary_serde::DeserializeErrorSpan {
                             start: index_in_buf,
                             end: index_in_buf + #tag_serialized_size_expr,
                         }
@@ -207,9 +208,9 @@ fn derive_binary_serde_for_enum(
             match tag {
                 #(#deserialization_variant_branches,)*
                 _ => {
-                    ::core::result::Result::Err(::binary_serde::Error {
-                        kind: ::binary_serde::ErrorKind::InvalidEnumTag { enum_name: #enum_name_str },
-                        span: ::binary_serde::ErrorSpan {
+                    ::core::result::Result::Err(::binary_serde::DeserializeError {
+                        kind: ::binary_serde::DeserializeErrorKind::InvalidEnumTag { enum_name: #enum_name_str },
+                        span: ::binary_serde::DeserializeErrorSpan {
                             start: index_in_buf,
                             end: index_in_buf + #tag_serialized_size_expr,
                         }
@@ -251,6 +252,7 @@ fn derive_binary_serde_for_enum(
     .into()
 }
 
+/// get the name of a destructured enum variant field that was destructured using [`build_enum_variant_fields_destructure`].
 fn get_enum_destructured_field_name(field: &Field, field_index: usize) -> proc_macro2::TokenStream {
     match &field.ident {
         Some(ident) => ident.to_token_stream(),
@@ -258,6 +260,27 @@ fn get_enum_destructured_field_name(field: &Field, field_index: usize) -> proc_m
     }
 }
 
+/// builds a destructuring of the fields of an enum variant.
+///
+/// to get the name of a destructured field, use the [`get_enum_destructured_field_name`] function.
+///
+/// # Example
+///
+/// for example, for the following enum:
+/// ```
+/// enum Animal {
+///     Person { age: i32, name: String },
+///     Dog(i32, u32),
+/// }
+/// ```
+/// for the variant `Animal::Person`, this function would return:
+/// ```
+/// { age, name }
+/// ```
+/// and for `Animal::Dog`, this function would return:
+/// ```
+/// (field0, field1)
+/// ```
 fn build_enum_variant_fields_destructure(variant: &Variant) -> proc_macro2::TokenStream {
     match &variant.fields {
         Fields::Named(named_fields) => {
@@ -284,13 +307,82 @@ fn build_enum_variant_fields_destructure(variant: &Variant) -> proc_macro2::Toke
     }
 }
 
+/// derives the core trait for a struct
 fn derive_binary_serde_for_struct(
     derive_input: &DeriveInput,
     data_struct: &DataStruct,
 ) -> proc_macro::TokenStream {
-    build_binary_serde_impl_with_fields(derive_input, &data_struct.fields).into()
+    let fields = &data_struct.fields;
+    let max_serialized_size_expr = build_max_serialized_size_expr_for_fields(fields);
+
+    let serialize_fn_body = {
+        let field_serializations = fields.iter().enumerate().scan(quote! { 0 }, |cur_index_in_buf, (field_index, field)| {
+                let access_name = build_field_self_access_name(field, field_index);
+                let field_max_serialized_size = max_serialized_size_of_ty(&field.ty);
+                let end_index_in_buf = quote! { #cur_index_in_buf + #field_max_serialized_size};
+                let field_serialization_call = quote! {
+                    ::binary_serde::BinarySerdeInternal::binary_serialize_internal(&self.#access_name, &mut buf[#cur_index_in_buf .. #end_index_in_buf], endianness);
+                };
+
+                *cur_index_in_buf = end_index_in_buf;
+
+                Some(field_serialization_call)
+            });
+        quote! { #(#field_serializations)* }
+    };
+
+    let serialize_min_fn_body = {
+        let field_serializations = fields.iter().enumerate().map(|(field_index, field)| {
+                let access_name = build_field_self_access_name(field, field_index);
+                let field_max_serialized_size = max_serialized_size_of_ty(&field.ty);
+                let field_serialization_call = quote! {
+                    cur_index_in_buf += ::binary_serde::BinarySerdeInternal::binary_serialize_min_internal(
+                        &self.#access_name,
+                        &mut buf[cur_index_in_buf .. cur_index_in_buf + #field_max_serialized_size],
+                        endianness
+                    );
+                };
+
+                Some(field_serialization_call)
+            });
+        quote! {
+            let mut cur_index_in_buf = 0;
+            #(#field_serializations)*
+            cur_index_in_buf
+        }
+    };
+
+    let deserialize_fn_body = {
+        let fields_initializer = build_deserialization_fields_initializer(fields, quote! { 0 });
+        quote! {
+            ::core::result::Result::Ok(Self #fields_initializer)
+        }
+    };
+
+    let deserialize_min_fn_body = {
+        let fields_initializer = build_deserialization_min_fields_initializer(fields);
+        quote! {
+            let mut cur_index_in_buf = 0;
+            let res = Self #fields_initializer;
+            ::core::result::Result::Ok((res, cur_index_in_buf))
+        }
+    };
+
+    let serialized_size_fn_body = build_struct_fields_binary_serialized_size(fields);
+
+    build_binary_serde_impl(
+        derive_input,
+        max_serialized_size_expr,
+        serialize_fn_body,
+        serialize_min_fn_body,
+        serialized_size_fn_body,
+        deserialize_fn_body,
+        deserialize_min_fn_body,
+    )
+    .into()
 }
 
+/// builds an implementation of the core trait provided the required items.
 fn build_binary_serde_impl(
     derive_input: &DeriveInput,
     max_serialized_size_expr: proc_macro2::TokenStream,
@@ -329,89 +421,18 @@ fn build_binary_serde_impl(
                 #serialized_size_fn_body
             }
 
-            fn binary_deserialize_internal(buf: &[u8], endianness: ::binary_serde::Endianness, index_in_buf: usize) -> ::core::result::Result<Self, ::binary_serde::Error> {
+            fn binary_deserialize_internal(buf: &[u8], endianness: ::binary_serde::Endianness, index_in_buf: usize) -> ::core::result::Result<Self, ::binary_serde::DeserializeError> {
                 #deserialize_fn_body
             }
 
-            fn binary_deserialize_min_internal(buf: &[u8], endianness: ::binary_serde::Endianness, index_in_buf: usize) -> ::core::result::Result<(Self, usize), ::binary_serde::Error> {
+            fn binary_deserialize_min_internal(buf: &[u8], endianness: ::binary_serde::Endianness, index_in_buf: usize) -> ::core::result::Result<(Self, usize), ::binary_serde::DeserializeError> {
                 #deserialize_min_fn_body
             }
         }
     }
 }
 
-fn build_binary_serde_impl_with_fields(
-    derive_input: &DeriveInput,
-    fields: &Fields,
-) -> proc_macro2::TokenStream {
-    let max_serialized_size_expr = build_max_serialized_size_expr_for_fields(fields);
-
-    let serialize_fn_body = {
-        let field_serializations = fields.iter().enumerate().scan(quote! { 0 }, |cur_index_in_buf, (field_index, field)| {
-            let access_name = build_field_self_access_name(field, field_index);
-            let field_max_serialized_size = max_serialized_size_of_ty(&field.ty);
-            let end_index_in_buf = quote! { #cur_index_in_buf + #field_max_serialized_size};
-            let field_serialization_call = quote! {
-                ::binary_serde::BinarySerdeInternal::binary_serialize_internal(&self.#access_name, &mut buf[#cur_index_in_buf .. #end_index_in_buf], endianness);
-            };
-
-            *cur_index_in_buf = end_index_in_buf;
-
-            Some(field_serialization_call)
-        });
-        quote! { #(#field_serializations)* }
-    };
-
-    let serialize_min_fn_body = {
-        let field_serializations = fields.iter().enumerate().map(|(field_index, field)| {
-            let access_name = build_field_self_access_name(field, field_index);
-            let field_max_serialized_size = max_serialized_size_of_ty(&field.ty);
-            let field_serialization_call = quote! {
-                cur_index_in_buf += ::binary_serde::BinarySerdeInternal::binary_serialize_min_internal(
-                    &self.#access_name,
-                    &mut buf[cur_index_in_buf .. cur_index_in_buf + #field_max_serialized_size],
-                    endianness
-                );
-            };
-
-            Some(field_serialization_call)
-        });
-        quote! {
-            let mut cur_index_in_buf = 0;
-            #(#field_serializations)*
-            cur_index_in_buf
-        }
-    };
-
-    let deserialize_fn_body = {
-        let fields_initializer = build_deserialization_fields_initializer(fields, quote! { 0 });
-        quote! {
-            ::core::result::Result::Ok(Self #fields_initializer)
-        }
-    };
-
-    let deserialize_min_fn_body = {
-        let fields_initializer = build_deserialization_min_fields_initializer(fields);
-        quote! {
-            let mut cur_index_in_buf = 0;
-            let res = Self #fields_initializer;
-            ::core::result::Result::Ok((res, cur_index_in_buf))
-        }
-    };
-
-    let serialized_size_fn_body = build_struct_fields_binary_serialized_size(fields);
-
-    build_binary_serde_impl(
-        derive_input,
-        max_serialized_size_expr,
-        serialize_fn_body,
-        serialize_min_fn_body,
-        serialized_size_fn_body,
-        deserialize_fn_body,
-        deserialize_min_fn_body,
-    )
-}
-
+/// build an expression for the binary serialized size of the given fields
 fn build_struct_fields_binary_serialized_size(fields: &Fields) -> proc_macro2::TokenStream {
     let field_sizes = fields.iter().enumerate().map(|(field_index, field)| {
         let access_name = build_field_self_access_name(field, field_index);
@@ -426,6 +447,10 @@ fn build_struct_fields_binary_serialized_size(fields: &Fields) -> proc_macro2::T
     }
 }
 
+/// builds an expression for the binary serialized size of the given enum variant fields.
+///
+/// this function assumes that the returned expression would be placed in a context where the variant's fields
+/// have been destructured using [`build_enum_variant_fields_destructure`].
 fn build_variant_fields_binary_serialized_size(fields: &Fields) -> proc_macro2::TokenStream {
     let field_sizes = fields.iter().enumerate().map(|(field_index, field)| {
         let field_name = get_enum_destructured_field_name(field, field_index);
@@ -438,6 +463,7 @@ fn build_variant_fields_binary_serialized_size(fields: &Fields) -> proc_macro2::
     }
 }
 
+/// builds an expression for accessing the provided field using a `self.` prefix.
 fn build_field_self_access_name(field: &Field, field_index: usize) -> proc_macro2::TokenStream {
     match &field.ident {
         Some(ident) => quote! { #ident },
@@ -445,6 +471,9 @@ fn build_field_self_access_name(field: &Field, field_index: usize) -> proc_macro
     }
 }
 
+/// builds an expression for initializing the provided fields by deserializing the input buffer into the corresponding field types.
+///
+/// the result of this function can be used after the name of a struct or an enum variant to generate a value of that type.
 fn build_deserialization_fields_initializer(
     fields: &Fields,
     initial_index_in_buf: proc_macro2::TokenStream,
@@ -476,6 +505,9 @@ fn build_deserialization_fields_initializer(
     build_field_initializers_to_type_initializer(fields, field_initializers)
 }
 
+/// builds an expression for initializing the provided fields by minimally deserializing the input buffer into the corresponding field types.
+///
+/// the result of this function can be used after the name of a struct or an enum variant to generate a value of that type.
 fn build_deserialization_min_fields_initializer(fields: &Fields) -> proc_macro2::TokenStream {
     let field_initializers =
         fields.iter().map(|field| {
@@ -505,6 +537,8 @@ fn build_deserialization_min_fields_initializer(fields: &Fields) -> proc_macro2:
     build_field_initializers_to_type_initializer(fields, field_initializers)
 }
 
+/// given a list of field initializer expressions, generates a type initializer which can be used after the name of a struct
+/// or an enum variant to generate a value of that type.
 fn build_field_initializers_to_type_initializer<I: ToTokens>(
     fields: &Fields,
     field_initializers: impl Iterator<Item = I>,
@@ -524,6 +558,7 @@ fn build_field_initializers_to_type_initializer<I: ToTokens>(
     }
 }
 
+/// builds a mock enum which is a copy of the provided `data_enum`, but with all variant data removed, such that all variants are empty.
 fn build_mock_enum_with_empty_variants(
     mock_enum_name_ident: &proc_macro2::Ident,
     data_enum: &DataEnum,
@@ -541,6 +576,7 @@ fn build_mock_enum_with_empty_variants(
     }
 }
 
+/// builds an expression for the serialized size of the largest enum variant of the provided enum.
 fn build_enum_largest_variant_serialized_size_expr(
     data_enum: &DataEnum,
 ) -> proc_macro2::TokenStream {
@@ -562,6 +598,7 @@ fn build_enum_largest_variant_serialized_size_expr(
     }
 }
 
+/// attempts to extract the enum's underlying representation type.
 fn enum_get_repr_type<'a>(
     derive_input: &'a DeriveInput,
     data_enum: &DataEnum,
@@ -579,7 +616,7 @@ fn enum_get_repr_type<'a>(
         Some(&meta_list.tokens)
     }) else {
         return Err(quote_spanned! {
-            data_enum.enum_token.span() => compile_error!("binary serialization for enums requires a #[repr(...)] attribute on the enum");
+            data_enum.enum_token.span() => compile_error!("binary serialization for enums requires a #[repr(...)] attribute on the enum to specify the size of the enum's tag");
         })
     };
 
@@ -592,11 +629,13 @@ fn enum_get_repr_type<'a>(
     Ok(repr_type)
 }
 
+/// checks if the provided expression inside a `#[repr(...)]` attribute on an enum represents an explicitly sized primitive int.
 fn is_enum_repr_type_sized_primitive_int(repr_type: &proc_macro2::TokenStream) -> bool {
     let repr_type_str = repr_type.to_string();
     repr_type_str.as_bytes()[0].is_ascii_alphabetic() && repr_type_str[1..].parse::<u32>().is_ok()
 }
 
+/// builds an expression for the maximum serialized size of the given fields.
 fn build_max_serialized_size_expr_for_fields(fields: &Fields) -> proc_macro2::TokenStream {
     let field_type_max_serialized_sizes = fields
         .iter()
@@ -608,6 +647,7 @@ fn build_max_serialized_size_expr_for_fields(fields: &Fields) -> proc_macro2::To
     }
 }
 
+/// returns an iterator over all subtypes of all fields of the provided struct or enum.
 fn collect_all_sub_types<'a>(
     derive_input: &'a DeriveInput,
 ) -> Box<dyn Iterator<Item = &'a Type> + 'a> {
@@ -626,6 +666,7 @@ fn collect_all_sub_types<'a>(
     }
 }
 
+/// builds an expression for the maximum serialized size of the given type.
 fn max_serialized_size_of_ty<T: ToTokens>(ty: &T) -> proc_macro2::TokenStream {
     quote! {
         <#ty as ::binary_serde::BinarySerdeInternal>::MAX_SERIALIZED_SIZE_INTERNAL
