@@ -467,7 +467,7 @@ fn build_variant_fields_binary_serialized_size(fields: &Fields) -> proc_macro2::
 fn build_field_self_access_name(field: &Field, field_index: usize) -> proc_macro2::TokenStream {
     match &field.ident {
         Some(ident) => quote! { #ident },
-        None => quote! { #field_index },
+        None => syn::Index::from(field_index).to_token_stream(),
     }
 }
 
