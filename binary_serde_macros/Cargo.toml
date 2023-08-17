@@ -1,6 +1,6 @@
 [package]
 name = "binary_serde_macros"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Roee Shoshani"]
 description = "simple binary serialization and deserialization"

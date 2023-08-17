@@ -155,6 +155,7 @@ fn derive_binary_serde_for_enum(
                 tag_serialized_size_expr.clone(),
             );
             quote! {
+                #[allow(non_upper_case_globals)]
                 #mock_enum_const_variant_ident => {
                     ::core::result::Result::Ok(Self::#variant_ident #fields_initializer)
                 }
@@ -190,6 +191,7 @@ fn derive_binary_serde_for_enum(
                 format_ident!("{}{}", mock_enum_name_ident, variant_ident);
             let fields_initializer = build_deserialization_min_fields_initializer(&variant.fields);
             quote! {
+                #[allow(non_upper_case_globals)]
                 #mock_enum_const_variant_ident => {
                     let res = Self::#variant_ident #fields_initializer;
                     ::core::result::Result::Ok((res, cur_index_in_buf))
