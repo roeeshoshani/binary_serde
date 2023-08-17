@@ -140,6 +140,7 @@ fn derive_binary_serde_for_enum(
         let const_ident = format_ident!("{}{}", mock_enum_name_ident, variant.ident);
         let variant_ident = &variant.ident;
         quote! {
+            #[allow(non_upper_case_globals)]
             const #const_ident: #repr_type = #mock_enum_name_ident::#variant_ident as #repr_type;
         }
     });
@@ -608,7 +609,7 @@ fn enum_get_repr_type<'a>(
             return None;
         };
         let Meta::List(meta_list) = &attr.meta else {
-            return None
+            return None;
         };
         if !meta_list.path.is_ident("repr") {
             return None;
@@ -617,7 +618,7 @@ fn enum_get_repr_type<'a>(
     }) else {
         return Err(quote_spanned! {
             data_enum.enum_token.span() => compile_error!("binary serialization for enums requires a #[repr(...)] attribute on the enum to specify the size of the enum's tag");
-        })
+        });
     };
 
     if !is_enum_repr_type_sized_primitive_int(&repr_type) {
