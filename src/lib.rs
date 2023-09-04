@@ -156,7 +156,7 @@ pub trait BinarySerde: BinarySerdeInternal {
 }
 impl<T: BinarySerdeInternal> BinarySerde for T {}
 
-macro_rules! impl_serialize_for_primitive_int_types {
+macro_rules! impl_serialize_for_primitive_int_and_float_types {
     {$($int: ty),+} => {
         $(
             impl BinarySerdeInternal for $int {
@@ -199,7 +199,7 @@ macro_rules! impl_serialize_for_primitive_int_types {
     };
 }
 
-impl_serialize_for_primitive_int_types! {u8,u16,u32,u64,u128,i8,i16,i32,i64,i128}
+impl_serialize_for_primitive_int_and_float_types! {u8,u16,u32,u64,u128,i8,i16,i32,i64,i128,f32,f64}
 
 impl BinarySerdeInternal for bool {
     const MAX_SERIALIZED_SIZE_INTERNAL: usize = 1;
