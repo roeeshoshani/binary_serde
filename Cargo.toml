@@ -18,3 +18,6 @@ members = ["binary_serde_macros"]
 binary_serde_macros = { path = "binary_serde_macros", version = "0.1.4" }
 thiserror-no-std = "2.0.2"
 array-init = "2.1.0"
+
+[features]
+std = ["thiserror-no-std/std"]
