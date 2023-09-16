@@ -35,7 +35,7 @@
 //! }
 //! ```
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 use core::marker::PhantomData;
 
@@ -62,9 +62,15 @@ pub struct DeserializeErrorSpan {
     pub start: usize,
     pub end: usize,
 }
+impl std::fmt::Display for DeserializeErrorSpan {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
 
 /// an error which occured while deserializing.
 #[derive(Debug, Error)]
+#[error("{kind} at {span}")]
 pub struct DeserializeError {
     /// the kind of error that occured.
     pub kind: DeserializeErrorKind,
