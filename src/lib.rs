@@ -62,7 +62,7 @@ pub struct DeserializeErrorSpan {
     pub start: usize,
     pub end: usize,
 }
-impl std::fmt::Display for DeserializeErrorSpan {
+impl core::fmt::Display for DeserializeErrorSpan {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}..{}", self.start, self.end)
     }
