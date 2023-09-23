@@ -9,6 +9,8 @@ use recursive_array::{
     RecursiveArraySingleItem,
 };
 
+pub use recursive_array;
+
 /// endianness.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum Endianness {
