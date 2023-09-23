@@ -171,6 +171,162 @@ pub enum DeserializeFromError {
     ),
 }
 
+/// binary serializes the given value using the given endianness into the given vector.
+#[cfg(feature = "std")]
+pub fn binary_serialize_into_vec<T: BinarySerde>(
+    value: &T,
+    endianness: Endianness,
+    vec: &mut Vec<u8>,
+) {
+    vec.reserve(T::SERIALIZED_SIZE);
+    value.binary_serialize(
+        unsafe {
+            core::slice::from_raw_parts_mut(vec.as_mut_ptr().add(vec.len()), T::SERIALIZED_SIZE)
+        },
+        endianness,
+    );
+    unsafe { vec.set_len(vec.len() + T::SERIALIZED_SIZE) }
+}
+
+/// a serializer which serializes value into a vector of bytes.
+#[cfg(feature = "std")]
+pub struct BinarySerializerToVec {
+    buf: Vec<u8>,
+    endianness: Endianness,
+}
+#[cfg(feature = "std")]
+impl BinarySerializerToVec {
+    /// creates a new serializer with an empty buffer and with the given endianness.
+    pub fn new(endianness: Endianness) -> Self {
+        Self {
+            buf: Vec::new(),
+            endianness,
+        }
+    }
+
+    /// creates a new serializer with the given initial buffer and endianness.
+    pub fn new_with_buffer(initial_buffer: Vec<u8>, endianness: Endianness) -> Self {
+        Self {
+            buf: initial_buffer,
+            endianness,
+        }
+    }
+
+    /// serializes the given value into the buffer.
+    pub fn serialize<T: BinarySerde>(&mut self, value: &T) {
+        binary_serialize_into_vec(value, self.endianness, &mut self.buf)
+    }
+
+    /// returns a reference to the serialized data in the buffer.
+    pub fn data(&self) -> &[u8] {
+        &self.buf
+    }
+
+    /// consumes this serializer and returns its internal buffer.
+    pub fn into_buffer(self) -> Vec<u8> {
+        self.buf
+    }
+}
+
+/// a serializer which serializes value into a data stream.
+#[cfg(feature = "std")]
+pub struct BinarySerializerToStream<W: std::io::Write> {
+    stream: W,
+    endianness: Endianness,
+}
+#[cfg(feature = "std")]
+impl<W: std::io::Write> BinarySerializerToStream<W> {
+    /// creates a new serializer which serializes into the given stream using the given endianness.
+    pub fn new(stream: W, endianness: Endianness) -> Self {
+        Self { stream, endianness }
+    }
+
+    /// serializes the given value into the stream.
+    pub fn serialize<T: BinarySerde>(&mut self, value: &T) -> std::io::Result<()> {
+        value.binary_serialize_into(&mut self.stream, self.endianness)
+    }
+
+    /// consumes this serializer and returns its internal stream.
+    pub fn into_stream(self) -> W {
+        self.stream
+    }
+}
+
+/// a deserializer which deserializes values from a buffer.
+pub struct BinaryDeserializerFromBuf<'a> {
+    buf: &'a [u8],
+    endianness: Endianness,
+    position: usize,
+}
+impl<'a> BinaryDeserializerFromBuf<'a> {
+    /// creates a new deserializer which deserializes values from the given buffer using the given endianness.
+    pub fn new(buf: &'a [u8], endianness: Endianness) -> Self {
+        Self {
+            buf,
+            endianness,
+            position: 0,
+        }
+    }
+
+    /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
+    ///
+    /// # Panics
+    ///
+    /// this function panics if the deserialization exceeds the bounds of the buffer.
+    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, DeserializeError> {
+        let result = T::binary_deserialize(
+            &self.buf[self.position..][..T::SERIALIZED_SIZE],
+            self.endianness,
+        )?;
+        self.position += T::SERIALIZED_SIZE;
+        Ok(result)
+    }
+
+    /// returns the current position of this deserializer in the buffer.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// sets the position of this deserializer in the buffer.
+    pub fn set_position(&mut self, new_position: usize) {
+        self.position = new_position;
+    }
+
+    /// moves this deserializer's position forwards according to the given amount.
+    pub fn move_forwards(&mut self, amount: usize) {
+        self.position += amount;
+    }
+
+    /// moves this deserializer's position backwards according to the given amount.
+    pub fn move_backwards(&mut self, amount: usize) {
+        self.position -= amount;
+    }
+}
+
+#[cfg(feature = "std")]
+/// a deserializer which deserializes values from a data stream.
+pub struct BinaryDeserializerFromStream<R: std::io::Read> {
+    stream: R,
+    endianness: Endianness,
+}
+#[cfg(feature = "std")]
+impl<R: std::io::Read> BinaryDeserializerFromStream<R> {
+    /// creates a new deserializer which deserializes values from the given data stream using the given endianness.
+    pub fn new(stream: R, endianness: Endianness) -> Self {
+        Self { stream, endianness }
+    }
+
+    /// deserializes a value of type `T` from the data stream.
+    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, DeserializeFromError> {
+        T::binary_deserialize_from(&mut self.stream, self.endianness)
+    }
+
+    /// consumes this deserializer and returns its internal stream.
+    pub fn into_stream(self) -> R {
+        self.stream
+    }
+}
+
 impl BinarySerde for u8 {
     const SERIALIZED_SIZE: usize = 1;
 
