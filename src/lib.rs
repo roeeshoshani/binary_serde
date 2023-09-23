@@ -1,5 +1,4 @@
-// TODO: uncomment this
-// #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 use core::marker::PhantomData;
 
@@ -50,6 +49,7 @@ pub trait BinarySerde: Sized {
         unsafe { array.assume_init() }
     }
 
+    #[cfg(feature = "std")]
     /// serialize this value into the given stream using the given endianness.
     fn binary_serialize_into<W: std::io::Write>(
         &self,
@@ -68,6 +68,7 @@ pub trait BinarySerde: Sized {
     /// this function panics if the length of `buf` is not exactly equal to [`Self::SERIALIZED_SIZE`].
     fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Self;
 
+    #[cfg(feature = "std")]
     /// deserializes the data from the given stream using the given endianness into a value of this type.
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
@@ -99,6 +100,7 @@ impl BinarySerde for u8 {
         RecursiveArraySingleItem::new(*self)
     }
 
+    #[cfg(feature = "std")]
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         stream: &mut W,
@@ -111,6 +113,7 @@ impl BinarySerde for u8 {
         buf[0]
     }
 
+    #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
@@ -134,6 +137,7 @@ impl BinarySerde for i8 {
         RecursiveArraySingleItem::new(*self as u8)
     }
 
+    #[cfg(feature = "std")]
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         stream: &mut W,
@@ -146,6 +150,7 @@ impl BinarySerde for i8 {
         buf[0] as i8
     }
 
+    #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
@@ -170,6 +175,7 @@ impl BinarySerde for bool {
         RecursiveArraySingleItem::new(*self as u8)
     }
 
+    #[cfg(feature = "std")]
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         stream: &mut W,
@@ -182,6 +188,7 @@ impl BinarySerde for bool {
         buf[0] != 0
     }
 
+    #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
@@ -204,6 +211,7 @@ impl<T> BinarySerde for PhantomData<T> {
         EmptyRecursiveArray
     }
 
+    #[cfg(feature = "std")]
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         _stream: &mut W,
@@ -216,6 +224,7 @@ impl<T> BinarySerde for PhantomData<T> {
         Self
     }
 
+    #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         _stream: &mut R,
         _endianness: Endianness,
@@ -235,6 +244,7 @@ impl BinarySerde for () {
         EmptyRecursiveArray
     }
 
+    #[cfg(feature = "std")]
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         _stream: &mut W,
@@ -247,6 +257,7 @@ impl BinarySerde for () {
         ()
     }
 
+    #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         _stream: &mut R,
         _endianness: Endianness,
