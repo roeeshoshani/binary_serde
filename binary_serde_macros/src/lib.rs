@@ -21,16 +21,41 @@ pub fn derive_binary_serde(input_tokens: proc_macro::TokenStream) -> proc_macro:
                     .map(|field_type| field_type.serialized_size())
                     .sum(),
                 recursive_array_type: gen_recursive_array_type_for_field_types(field_types),
-                serialization_code: gen_serialization_code(&data_struct.fields),
-                deserialization_code: gen_deserialization_code(&data_struct.fields),
+                serialization_code: gen_struct_serialization_code(&data_struct.fields),
+                deserialization_code: gen_struct_deserialization_code(&data_struct.fields),
             })
             .into()
         }
-        syn::Data::Enum(_) => {
-            return quote_spanned! {
-                proc_macro2::Span::call_site() => compile_error!("enums are not supported, only structs are supported");
+        syn::Data::Enum(data_enum) => {
+            // make sure that none of the enum's variants hold data in them
+            for variant in &data_enum.variants {
+                if !matches!(&variant.fields, syn::Fields::Unit) {
+                    return quote_spanned! {
+                        proc_macro2::Span::call_site() => compile_error!("enum variants which contain data are not supported")
+                    }.into();
+                }
             }
-            .into();
+            let repr_type = match enum_get_repr_type(&input) {
+                Ok(repr_type) => TypeExpr(repr_type.clone()),
+                Err(err) => return err.into(),
+            };
+            gen_impl(GenImplParams {
+                additional_where_predicates: Vec::new(),
+                serialized_size: repr_type.serialized_size(),
+                recursive_array_type: repr_type.serialized_recursive_array_type(),
+                serialization_code: quote! {
+                    let as_primitive: &#repr_type = unsafe { ::core::mem::transmute(self) };
+                    ::binary_serde::BinarySerde::binary_serialize(as_primitive, buf, endianness)
+                },
+                deserialization_code: gen_enum_deserialization_code(
+                    &input.ident,
+                    repr_type,
+                    data_enum,
+                ),
+                type_ident: input.ident,
+                generics: input.generics,
+            })
+            .into()
         }
         syn::Data::Union(_) => {
             return quote_spanned! {
@@ -39,6 +64,42 @@ pub fn derive_binary_serde(input_tokens: proc_macro::TokenStream) -> proc_macro:
             .into();
         }
     }
+}
+
+/// attempts to extract the enum's underlying representation type.
+fn enum_get_repr_type<'a>(
+    derive_input: &'a DeriveInput,
+) -> Result<&'a proc_macro2::TokenStream, proc_macro2::TokenStream> {
+    let Some(repr_type) = derive_input.attrs.iter().find_map(|attr| {
+        let syn::AttrStyle::Outer = &attr.style else {
+            return None;
+        };
+        let syn::Meta::List(meta_list) = &attr.meta else {
+            return None;
+        };
+        if !meta_list.path.is_ident("repr") {
+            return None;
+        }
+        Some(&meta_list.tokens)
+    }) else {
+        return Err(quote_spanned! {
+            proc_macro2::Span::call_site() => compile_error!("a #[repr(...)] attribute is required on the enum to specify the size of the enum's tag");
+        });
+    };
+
+    if !is_enum_repr_type_sized_primitive_int(&repr_type) {
+        return Err(quote_spanned! {
+            proc_macro2::Span::call_site() => compile_error!("the enum's #[repr(...)] attribute must contain an explicitly sized primitive integer type (e.g., u32)");
+        });
+    }
+
+    Ok(repr_type)
+}
+
+/// checks if the provided expression inside a `#[repr(...)]` attribute on an enum represents an explicitly sized primitive int.
+fn is_enum_repr_type_sized_primitive_int(repr_type: &proc_macro2::TokenStream) -> bool {
+    let repr_type_str = repr_type.to_string();
+    repr_type_str.as_bytes()[0].is_ascii_alphabetic() && repr_type_str[1..].parse::<u32>().is_ok()
 }
 
 /// returns an iterator over the offset and size of each field.
@@ -78,7 +139,7 @@ fn field_accessors<'a, I: Iterator<Item = &'a syn::Field> + 'a>(
 }
 
 /// generates code for serializing a struct with the given fields.
-fn gen_serialization_code(fields: &syn::Fields) -> proc_macro2::TokenStream {
+fn gen_struct_serialization_code(fields: &syn::Fields) -> proc_macro2::TokenStream {
     let statements = field_accessors(fields.iter())
         .zip(fields_offsets_and_sizes(fields.iter()))
         .map(|(field_accessor, offset_and_size)| {
@@ -97,7 +158,63 @@ fn gen_serialization_code(fields: &syn::Fields) -> proc_macro2::TokenStream {
 }
 
 /// generates code for deserializing a struct with the given fields.
-fn gen_deserialization_code(fields: &syn::Fields) -> proc_macro2::TokenStream {
+fn gen_enum_deserialization_code(
+    enum_ident: &syn::Ident,
+    enum_repr_type: TypeExpr,
+    data_enum: &syn::DataEnum,
+) -> proc_macro2::TokenStream {
+    let variant_consts_idents = data_enum.variants.iter().map(|variant| {
+        let const_name = format!(
+            "_BINARY_SERDE_CONST_{}",
+            pascal_to_capital_snake_case(&variant.ident.to_string())
+        );
+        syn::Ident::new(&const_name, proc_macro2::Span::mixed_site())
+    });
+    let variant_consts_definitions = data_enum
+        .variants
+        .iter()
+        .zip(variant_consts_idents.clone())
+        .map(|(variant, const_ident)| {
+            let variant_ident = &variant.ident;
+            quote! {
+                const #const_ident: #enum_repr_type = (#enum_ident::#variant_ident) as #enum_repr_type;
+            }
+        });
+    let match_cases =
+        data_enum
+            .variants
+            .iter()
+            .zip(variant_consts_idents)
+            .map(|(variant, const_ident)| {
+                let variant_ident = &variant.ident;
+                quote! {
+                    #const_ident => #enum_ident::#variant_ident
+                }
+            });
+    quote! {
+        #(#variant_consts_definitions)*
+        let primitive_value = <#enum_repr_type as ::binary_serde::BinarySerde>::binary_deserialize(buf, endianness);
+        match primitive_value {
+            #(#match_cases,)*
+            _ => unreachable!()
+        }
+    }
+}
+
+/// convets a PascalCase string to a CAPITAL_SNAKE_CASE string.
+fn pascal_to_capital_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() && i != 0 {
+            result.push('_');
+        }
+        result.extend(c.to_uppercase())
+    }
+    result
+}
+
+/// generates code for deserializing a struct with the given fields.
+fn gen_struct_deserialization_code(fields: &syn::Fields) -> proc_macro2::TokenStream {
     let field_values = fields_offsets_and_sizes(fields.iter()).map(|offset_and_size| {
         let FieldOffsetAndSize { size, offset } = offset_and_size;
         quote! {
