@@ -1,6 +1,6 @@
 [package]
 name = "binary_serde"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = ["Roee Shoshani"]
 description = "simple binary serialization and deserialization"
@@ -15,9 +15,9 @@ categories = ["embedded", "encoding", "no-std", "parsing"]
 members = ["binary_serde_macros"]
 
 [dependencies]
-binary_serde_macros = { path = "binary_serde_macros", version = "0.1.6" }
-thiserror-no-std = "2.0.2"
+binary_serde_macros = { path = "binary_serde_macros", version = "0.1.7" }
 array-init = "2.1.0"
+recursive_array = "0.1.1"
 
 [features]
-std = ["thiserror-no-std/std"]
+std = []
