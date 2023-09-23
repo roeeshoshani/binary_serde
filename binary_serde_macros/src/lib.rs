@@ -188,15 +188,18 @@ fn gen_enum_deserialization_code(
             .map(|(variant, const_ident)| {
                 let variant_ident = &variant.ident;
                 quote! {
-                    #const_ident => #enum_ident::#variant_ident
+                    #const_ident => Ok(#enum_ident::#variant_ident)
                 }
             });
+    let enum_name = enum_ident.to_string();
     quote! {
         #(#variant_consts_definitions)*
-        let primitive_value = <#enum_repr_type as ::binary_serde::BinarySerde>::binary_deserialize(buf, endianness);
+        let primitive_value = <#enum_repr_type as ::binary_serde::BinarySerde>::binary_deserialize(buf, endianness)?;
         match primitive_value {
             #(#match_cases,)*
-            _ => unreachable!()
+            _ => ::core::result::Result::Err(::binary_serde::DeserializeError::InvalidEnumValue {
+                enum_name: #enum_name,
+            })
         }
     }
 }
@@ -221,7 +224,7 @@ fn gen_struct_deserialization_code(fields: &syn::Fields) -> proc_macro2::TokenSt
             ::binary_serde::BinarySerde::binary_deserialize(
                 &buf[#offset..][..#size],
                 endianness
-            )
+            )?
         }
     });
     match fields {
@@ -234,19 +237,19 @@ fn gen_struct_deserialization_code(fields: &syn::Fields) -> proc_macro2::TokenSt
                     }
                 });
             quote! {
-                Self {
+                Ok(Self {
                     #(#field_specifications),*
-                }
+                })
             }
         }
         syn::Fields::Unnamed(_) => {
             quote! {
-                Self (
+                Ok(Self (
                     #(#field_values),*
-                )
+                ))
             }
         }
-        syn::Fields::Unit => quote! { Self },
+        syn::Fields::Unit => quote! { Ok(Self) },
     }
 }
 /// generates a recursive array type for a struct made of the given field types.
@@ -328,7 +331,10 @@ fn gen_impl(params: GenImplParams) -> proc_macro2::TokenStream {
             fn binary_serialize(&self, buf: &mut [u8], endianness: ::binary_serde::Endianness) {
                 #serialization_code
             }
-            fn binary_deserialize(buf: &[u8], endianness: ::binary_serde::Endianness) -> Self {
+            fn binary_deserialize(
+                buf: &[u8],
+                endianness: ::binary_serde::Endianness
+            ) -> ::core::result::Result<Self, ::binary_serde::DeserializeError> {
                 #deserialization_code
             }
         }

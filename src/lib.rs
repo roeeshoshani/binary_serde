@@ -129,7 +129,7 @@ pub trait BinarySerde: Sized {
             )
         })?;
         let array = unsafe { uninit_array.assume_init() };
-        Ok(Self::binary_deserialize(array.as_slice(), endianness))
+        Ok(Self::binary_deserialize(array.as_slice(), endianness)?)
     }
 }
 
