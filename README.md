@@ -1,38 +1,43 @@
 # binary_serde
 
-this is a crate that allows serializing and deserializing rust types into a simple binary format.
+this is a crate which allows serializing and deserializing rust structs into a packed binary format.
 
-please note that the format only support fixed size data types. dynamically sized types like `&[T]`, `Vec` and `String` are not supported.
+the format does exactly what you expect it to do, it just serializes all fields in order,
+according to their representation in memory.
 
-the serialization and deserialization have 2 modes of operation:
-- the first mode provides operations on fixed size buffers. serialization of a some value of type `T` will always generate an output
-of the same size, no matter what value is provided. deserialization requires a buffer of a specific size.
-- the second mode provides more compact serialization and deserialization, but different values of the same type will generate
-differently sized outputs.
+this is very useful for parsing many common binary formats which often just represent fields in a packed binary representation,
+just like the format used by this crate.
 
-the format is very `no_std` friendly, since it allows for knowing the maximum serialized size of a type as a compile time constant,
-which means that the type can be serialized into a buffer on the stack whose size is known at compile time, requiring no heap allocations.
+additionally, this crate is very `no_std` friendly and allows writing highly performant code because it it allows for knowing
+the maximum serialized size of a type as a compile time constant, which means that the type can be serialized into a buffer on
+the stack whose size is known at compile time, requiring no heap allocations.
 
-the format also allows very easy parsing of common binary format which often just represent fields in a packed binary representation.
+please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
 
 ## Example
 ```rust
 use binary_serde::{BinarySerde, Endianness};
 
-#[derive(BinarySerde, Debug)]
-#[repr(u8)]
-enum Message {
-    Number { number: i32 },
-    Buffer([u8; 1024]),
-    Empty,
+#[derive(Debug, BinarySerde, Default)]
+struct Elf32SectionHeader {
+    sh_name: u32,
+    sh_type: u32,
+    sh_flags: u32,
+    sh_addr: u32,
+    sh_offset: u32,
+    sh_size: u32,
+    sh_link: u32,
+    sh_info: u32,
+    sh_addralign: u32,
+    sh_entsize: u32,
 }
 
 fn main() {
-    let mut buffer = [0u8; <Message as BinarySerde>::MAX_SERIALIZED_SIZE];
-    let msg = Message::Buffer([1; 1024]);
-    msg.binary_serialize(&mut buffer, Endianness::Big);
-    println!("{:?}", buffer);
-    let recreated_msg = Message::binary_deserialize(&buffer, Endianness::Big);
-    println!("{:?}", recreated_msg);
+    let shdr = Elf32SectionHeader::default();
+    let bytes = shdr.binary_serialize_to_array(Endianness::Big);
+    let reconstructed_shdr =
+        Elf32SectionHeader::binary_deserialize(bytes.as_ref(), Endianness::Big);
 }
 ```
+
+License: MIT
