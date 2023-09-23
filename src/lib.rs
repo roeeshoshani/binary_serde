@@ -49,6 +49,7 @@ use recursive_array::{
 };
 
 pub use recursive_array;
+use thiserror_no_std::Error;
 
 /// endianness.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
@@ -103,17 +104,22 @@ pub trait BinarySerde: Sized {
 
     /// deserializes the given buffer using the given endianness into a value of this type.
     ///
+    /// # Errors
+    ///
+    /// this function return an error if the given bytes do not represent a valid value of this type.
+    /// this can only ever happen if during deserialization we got an enum value that does not match any of the enum's variants.
+    ///
     /// # Panics
     ///
     /// this function panics if the length of `buf` is not exactly equal to [`Self::SERIALIZED_SIZE`].
-    fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Self;
+    fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Result<Self, DeserializeError>;
 
     #[cfg(feature = "std")]
     /// deserializes the data from the given stream using the given endianness into a value of this type.
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         let mut uninit_array: core::mem::MaybeUninit<Self::RecursiveArray> =
             core::mem::MaybeUninit::uninit();
         stream.read_exact(unsafe {
@@ -125,6 +131,34 @@ pub trait BinarySerde: Sized {
         let array = unsafe { uninit_array.assume_init() };
         Ok(Self::binary_deserialize(array.as_slice(), endianness))
     }
+}
+
+/// an error which can occur while deserializing.
+#[derive(Debug, Error)]
+pub enum DeserializeError {
+    #[error("invalid value for enum {enum_name}")]
+    InvalidEnumValue { enum_name: &'static str },
+}
+
+#[cfg(feature = "std")]
+/// an error which can occur while deserializing from a data stream.
+#[derive(Debug, Error)]
+pub enum DeserializeFromError {
+    /// an io error has occured while reading from the stream.
+    #[error("io error while reading from stream")]
+    IoError(
+        #[from]
+        #[source]
+        std::io::Error,
+    ),
+
+    /// a deserialization error occured while trying to deserialize the bytes that were read from the stream.
+    #[error("deserialization error")]
+    DeserializeError(
+        #[from]
+        #[source]
+        DeserializeError,
+    ),
 }
 
 impl BinarySerde for u8 {
@@ -149,15 +183,15 @@ impl BinarySerde for u8 {
         stream.write_all(&[*self])
     }
 
-    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Self {
-        buf[0]
+    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(buf[0])
     }
 
     #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         let mut result: core::mem::MaybeUninit<Self> = core::mem::MaybeUninit::uninit();
         stream.read_exact(unsafe { core::slice::from_raw_parts_mut(result.as_mut_ptr(), 1) })?;
         Ok(unsafe { result.assume_init() })
@@ -186,15 +220,15 @@ impl BinarySerde for i8 {
         stream.write_all(&[*self as u8])
     }
 
-    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Self {
-        buf[0] as i8
+    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(buf[0] as i8)
     }
 
     #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         let mut result: core::mem::MaybeUninit<u8> = core::mem::MaybeUninit::uninit();
         stream.read_exact(unsafe { core::slice::from_raw_parts_mut(result.as_mut_ptr(), 1) })?;
         let byte = unsafe { result.assume_init() };
@@ -224,15 +258,15 @@ impl BinarySerde for bool {
         stream.write_all(&[*self as u8])
     }
 
-    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Self {
-        buf[0] != 0
+    fn binary_deserialize(buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(buf[0] != 0)
     }
 
     #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         _endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         let mut result: core::mem::MaybeUninit<u8> = core::mem::MaybeUninit::uninit();
         stream.read_exact(unsafe { core::slice::from_raw_parts_mut(result.as_mut_ptr(), 1) })?;
         let byte = unsafe { result.assume_init() };
@@ -260,15 +294,15 @@ impl<T> BinarySerde for PhantomData<T> {
         Ok(())
     }
 
-    fn binary_deserialize(_buf: &[u8], _endianness: Endianness) -> Self {
-        Self
+    fn binary_deserialize(_buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(Self)
     }
 
     #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         _stream: &mut R,
         _endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         Ok(Self)
     }
 }
@@ -293,15 +327,15 @@ impl BinarySerde for () {
         Ok(())
     }
 
-    fn binary_deserialize(_buf: &[u8], _endianness: Endianness) -> Self {
-        ()
+    fn binary_deserialize(_buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(())
     }
 
     #[cfg(feature = "std")]
     fn binary_deserialize_from<R: std::io::Read>(
         _stream: &mut R,
         _endianness: Endianness,
-    ) -> std::io::Result<Self> {
+    ) -> Result<Self, DeserializeFromError> {
         Ok(())
     }
 }
@@ -339,8 +373,8 @@ impl<const N: usize, T: BinarySerde> BinarySerde for [T; N] {
         }
     }
 
-    fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Self {
-        core::array::from_fn(|i| {
+    fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Result<Self, DeserializeError> {
+        array_init::try_array_init(|i| {
             T::binary_deserialize(
                 &buf[i * T::SERIALIZED_SIZE..][T::SERIALIZED_SIZE..],
                 endianness,
@@ -363,12 +397,12 @@ macro_rules! impl_for_primitive_types {
                     };
                     buf.copy_from_slice(bytes.as_slice());
                 }
-                fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Self {
+                fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Result<Self, DeserializeError> {
                     let array = buf.try_into().unwrap();
-                    match endianness {
+                    Ok(match endianness {
                         Endianness::Big => Self::from_be_bytes(array),
                         Endianness::Little => Self::from_le_bytes(array),
-                    }
+                    })
                 }
             }
         )+
