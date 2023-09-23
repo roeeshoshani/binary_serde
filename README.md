@@ -19,9 +19,19 @@ please note that this means that dynamically sized types like `&[T]`, `Vec<T>` a
 use binary_serde::{BinarySerde, Endianness};
 
 #[derive(Debug, BinarySerde, Default)]
+#[repr(u32)]
+enum ElfSectionHeaderType {
+    #[default]
+    ProgBits = 1,
+    SymbolTable = 2,
+    StringTable = 3,
+    // TODO: add the rest of the types...
+}
+
+#[derive(Debug, BinarySerde, Default)]
 struct Elf32SectionHeader {
     sh_name: u32,
-    sh_type: u32,
+    sh_type: ElfSectionHeaderType,
     sh_flags: u32,
     sh_addr: u32,
     sh_offset: u32,
