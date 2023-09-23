@@ -18,10 +18,23 @@ pub enum Endianness {
     Little,
 }
 
+/// a trait for serializing and deserializing a type into a packed binary format.
 pub trait BinarySerde: Sized {
+    /// the size of this type when serialized to a packed binary format.
     const SERIALIZED_SIZE: usize;
+
+    /// the fixed size recursive array type that is returned when serializing this type to an array.
+    /// the length of this array is guaranteed to be equal to [`Self::SERIALIZED_SIZE`].
     type RecursiveArray: RecursiveArray<u8>;
+
+    /// serialize this value into the given buffer using the given endianness.
+    ///
+    /// # Panics
+    ///
+    /// this function panics if the length of `buf` is not exactly equal to [`Self::SERIALIZED_SIZE`].
     fn binary_serialize(&self, buf: &mut [u8], endianness: Endianness);
+
+    /// serialize this value to a fixed size array using the given endianness.
     fn binary_serialize_to_array(&self, endianness: Endianness) -> Self::RecursiveArray {
         let mut array: core::mem::MaybeUninit<Self::RecursiveArray> =
             core::mem::MaybeUninit::uninit();
@@ -36,6 +49,8 @@ pub trait BinarySerde: Sized {
         );
         unsafe { array.assume_init() }
     }
+
+    /// serialize this value into the given stream using the given endianness.
     fn binary_serialize_into<W: std::io::Write>(
         &self,
         stream: &mut W,
@@ -45,7 +60,15 @@ pub trait BinarySerde: Sized {
         stream.write_all(serialized.as_slice())?;
         Ok(())
     }
+
+    /// deserializes the given buffer using the given endianness into a value of this type.
+    ///
+    /// # Panics
+    ///
+    /// this function panics if the length of `buf` is not exactly equal to [`Self::SERIALIZED_SIZE`].
     fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Self;
+
+    /// deserializes the data from the given stream using the given endianness into a value of this type.
     fn binary_deserialize_from<R: std::io::Read>(
         stream: &mut R,
         endianness: Endianness,
