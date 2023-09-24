@@ -1,38 +1,69 @@
 # binary_serde
 
-this is a crate that allows serializing and deserializing rust types into a simple binary format.
+this is a crate which allows serializing and deserializing rust structs into a packed binary format.
 
-please note that the format only support fixed size data types. dynamically sized types like `&[T]`, `Vec` and `String` are not supported.
+the format does exactly what you expect it to do, it just serializes all fields in order,
+according to their representation in memory, and according to the chosen endianness.
 
-the serialization and deserialization have 2 modes of operation:
-- the first mode provides operations on fixed size buffers. serialization of a some value of type `T` will always generate an output
-of the same size, no matter what value is provided. deserialization requires a buffer of a specific size.
-- the second mode provides more compact serialization and deserialization, but different values of the same type will generate
-differently sized outputs.
+this is very useful for parsing many common binary formats which often just represent fields in a packed binary representation,
+just like the format used by this crate.
 
-the format is very `no_std` friendly, since it allows for knowing the maximum serialized size of a type as a compile time constant,
-which means that the type can be serialized into a buffer on the stack whose size is known at compile time, requiring no heap allocations.
+additionally, this crate is very `no_std` friendly and allows writing highly performant code because it it allows for knowing
+the maximum serialized size of a type as a compile time constant, which means that the type can be serialized into a buffer on
+the stack whose size is known at compile time, requiring no heap allocations.
 
-the format also allows very easy parsing of common binary format which often just represent fields in a packed binary representation.
+please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
+
+this crate also supports defining bitfields since those seem to be quite common in a lot of binary formats.
+the bitfield definition allows the user to specify the bit length of each field struct.
+the bitfields are defined using the [`binary_serde_bitfield`] attribute.
+the order of the fields in a bitfield is treated as lsb first.
+an example of a bitfield can be seen in the example below.
 
 ## Example
+a simple example of serializing and deserializing an elf 32 bit relocation entry:
 ```rust
-use binary_serde::{BinarySerde, Endianness};
+use binary_serde::{binary_serde_bitfield, BinarySerde, Endianness};
 
-#[derive(BinarySerde, Debug)]
+#[derive(Debug, BinarySerde, Default, PartialEq, Eq)]
 #[repr(u8)]
-enum Message {
-    Number { number: i32 },
-    Buffer([u8; 1024]),
-    Empty,
+enum Elf32RelocationType {
+    #[default]
+    Direct = 1,
+    PcRelative = 2,
+    GotEntry = 3,
+    // ...
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+#[binary_serde_bitfield]
+struct Elf32RelocationInfo {
+    #[bits(8)]
+    ty: Elf32RelocationType,
+
+    #[bits(24)]
+    symbol_index: u32,
+}
+
+#[derive(Debug, BinarySerde, Default, PartialEq, Eq)]
+struct Elf32RelocationWithAddend {
+    offset: u32,
+    info: Elf32RelocationInfo,
+    addend: u32,
 }
 
 fn main() {
-    let mut buffer = [0u8; <Message as BinarySerde>::MAX_SERIALIZED_SIZE];
-    let msg = Message::Buffer([1; 1024]);
-    msg.binary_serialize(&mut buffer, Endianness::Big);
-    println!("{:?}", buffer);
-    let recreated_msg = Message::binary_deserialize(&buffer, Endianness::Big);
-    println!("{:?}", recreated_msg);
+    let rel = Elf32RelocationWithAddend::default();
+
+    // serialize the relocation to a statically allocated array on the stack
+    let bytes = rel.binary_serialize_to_array(Endianness::Little);
+
+    // deserialize the relocation from its bytes to get back the original value
+    let reconstructed_rel =
+        Elf32RelocationWithAddend::binary_deserialize(bytes.as_ref(), Endianness::Little).unwrap();
+
+    assert_eq!(rel, reconstructed_rel)
 }
 ```
+
+License: MIT
