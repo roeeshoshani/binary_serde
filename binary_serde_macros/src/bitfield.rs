@@ -147,28 +147,6 @@ fn extract_field_bit_lengths(
     Ok(bit_lengths)
 }
 
-/// parameters required for implementing the `BinarySerde` trait for a bitfield.
-struct GenImplForBitfieldParams {
-    /// the identifier of the struct for which the trait is to be implemented.
-    struct_ident: syn::Ident,
-
-    /// the generics of the struct for which the trait is implemented.
-    generics: syn::Generics,
-}
-
-/// implements the `BinarySerde` trait for a bitfield.
-fn gen_impl_for_bitfield(params: GenImplForBitfieldParams) -> proc_macro2::TokenStream {
-    gen_impl(GenImplParams {
-        type_ident: params.struct_ident,
-        generics: params.generics,
-        additional_where_predicates: todo!(),
-        serialized_size: todo!(),
-        recursive_array_type: todo!(),
-        serialization_code: todo!(),
-        deserialization_code: todo!(),
-    });
-}
-
 /// generates code for serializing a bitfield struct.
 fn gen_bitfield_serialization_code(
     field_bit_lengths: &[usize],

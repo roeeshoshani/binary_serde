@@ -1,5 +1,5 @@
-use quote::{quote, quote_spanned};
-use syn::{parse_macro_input, parse_quote, DeriveInput};
+use quote::quote;
+use syn::parse_quote;
 
 mod bitfield;
 mod simple;

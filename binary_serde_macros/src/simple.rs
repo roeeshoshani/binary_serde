@@ -1,5 +1,5 @@
 use quote::{quote, quote_spanned};
-use syn::{parse_macro_input, parse_quote, DeriveInput};
+use syn::{parse_macro_input, DeriveInput};
 
 use crate::{
     gen_impl, gen_predicates_for_field_types, FieldOffsetExpr, GenImplParams, SerializedSizeExpr,
