@@ -703,7 +703,7 @@ impl<const N: usize, T: BinarySerde> BinarySerde for [T; N] {
     fn binary_deserialize(buf: &[u8], endianness: Endianness) -> Result<Self, DeserializeError> {
         array_init::try_array_init(|i| {
             T::binary_deserialize(
-                &buf[i * T::SERIALIZED_SIZE..][T::SERIALIZED_SIZE..],
+                &buf[i * T::SERIALIZED_SIZE..][..T::SERIALIZED_SIZE],
                 endianness,
             )
         })
