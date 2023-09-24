@@ -15,8 +15,8 @@ the stack whose size is known at compile time, requiring no heap allocations.
 please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
 
 this crate also supports defining bitfields since those seem to be quite common in a lot of binary formats.
-the bitfield definition allows the user to specify the bit length of each field struct.
-the bitfields are defined using the [`binary_serde_bitfield`] attribute.
+the bitfield definition allows the user to specify the bit length of each field of the struct.
+the bitfields are defined using the `binary_serde_bitfield` attribute.
 the order of the fields in a bitfield is treated as lsb first.
 an example of a bitfield can be seen in the example below.
 
