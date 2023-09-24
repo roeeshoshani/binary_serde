@@ -9,7 +9,7 @@ this is very useful for parsing many common binary formats which often just repr
 just like the format used by this crate.
 
 additionally, this crate is very `no_std` friendly and allows writing highly performant code because it allows for knowing
-the maximum serialized size of a type as a compile time constant, which means that the type can be serialized into a buffer on
+the serialized size of a type as a compile time constant, which means that the type can be serialized into a buffer on
 the stack whose size is known at compile time, requiring no heap allocations.
 
 please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
