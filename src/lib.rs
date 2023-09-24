@@ -12,11 +12,21 @@
 //!
 //! please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
 //!
+//! ### bitfields
+//!
 //! this crate also supports defining bitfields since those seem to be quite common in a lot of binary formats.
 //! the bitfield definition allows the user to specify the bit length of each field of the struct.
 //! the bitfields are defined using the `binary_serde_bitfield` attribute.
 //! the order of the fields in a bitfield is treated as lsb first.
 //! an example of a bitfield can be seen in the example below.
+//!
+//! ### std support
+//!
+//! this crate provides a feature flag called `std` which enables a bunch of std related features:
+//! - the error types implement `std::error::Error`
+//! - adds the `binary_serialize_into` and the `binary_deserialize_from` functions to the `BinarySerde` trait which allow
+//!   serializing/deserializing to/from data streams (`std::io::Read`/`std::io::Write`).
+//! - adds a bunch of convenience functions and structs which require `std` support.
 //!
 //! # Example
 //! a simple example of serializing and deserializing an elf 32 bit relocation entry:
