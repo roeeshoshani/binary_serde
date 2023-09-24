@@ -1,7 +1,7 @@
 //! this is a crate which allows serializing and deserializing rust structs into a packed binary format.
 //!
 //! the format does exactly what you expect it to do, it just serializes all fields in order,
-//! according to their representation in memory.
+//! according to their representation in memory, and according to the chosen endianness.
 //!
 //! this is very useful for parsing many common binary formats which often just represent fields in a packed binary representation,
 //! just like the format used by this crate.
@@ -12,39 +12,55 @@
 //!
 //! please note that this means that dynamically sized types like `&[T]`, `Vec<T>` and `String` are not supported.
 //!
-//! # Example
-//! ```
-//! use binary_serde::{BinarySerde, Endianness};
+//! this crate also supports defining bitfields since those seem to be quite common in a lot of binary formats.
+//! the bitfield definition allows the user to specify the bit length of each field struct.
+//! the bitfields are defined using the [`binary_serde_bitfield`] attribute.
+//! the order of the fields in a bitfield is treated as lsb first.
+//! an example of a bitfield can be seen in the example below.
 //!
-//! #[derive(Debug, BinarySerde, Default)]
-//! #[repr(u32)]
-//! enum ElfSectionHeaderType {
+//! # Example
+//! a simple example of serializing and deserializing an elf 32 bit relocation entry:
+//! ```
+//! use binary_serde::{binary_serde_bitfield, BinarySerde, Endianness};
+//!
+//! #[derive(Debug, BinarySerde, Default, PartialEq, Eq)]
+//! #[repr(u8)]
+//! enum Elf32RelocationType {
 //!     #[default]
-//!     ProgBits = 1,
-//!     SymbolTable = 2,
-//!     StringTable = 3,
-//!     // TODO: add the rest of the types...
+//!     Direct = 1,
+//!     PcRelative = 2,
+//!     GotEntry = 3,
+//!     // ...
 //! }
 //!
-//! #[derive(Debug, BinarySerde, Default)]
-//! struct Elf32SectionHeader {
-//!     sh_name: u32,
-//!     sh_type: ElfSectionHeaderType,
-//!     sh_flags: u32,
-//!     sh_addr: u32,
-//!     sh_offset: u32,
-//!     sh_size: u32,
-//!     sh_link: u32,
-//!     sh_info: u32,
-//!     sh_addralign: u32,
-//!     sh_entsize: u32,
+//! #[derive(Debug, Default, PartialEq, Eq)]
+//! #[binary_serde_bitfield]
+//! struct Elf32RelocationInfo {
+//!     #[bits(8)]
+//!     ty: Elf32RelocationType,
+//!
+//!     #[bits(24)]
+//!     symbol_index: u32,
+//! }
+//!
+//! #[derive(Debug, BinarySerde, Default, PartialEq, Eq)]
+//! struct Elf32RelocationWithAddend {
+//!     offset: u32,
+//!     info: Elf32RelocationInfo,
+//!     addend: u32,
 //! }
 //!
 //! fn main() {
-//!     let shdr = Elf32SectionHeader::default();
-//!     let bytes = shdr.binary_serialize_to_array(Endianness::Big);
-//!     let reconstructed_shdr =
-//!         Elf32SectionHeader::binary_deserialize(bytes.as_ref(), Endianness::Big);
+//!     let rel = Elf32RelocationWithAddend::default();
+//!
+//!     // serialize the relocation to a statically allocated array on the stack
+//!     let bytes = rel.binary_serialize_to_array(Endianness::Little);
+//!
+//!     // deserialize the relocation from its bytes to get back the original value
+//!     let reconstructed_rel =
+//!         Elf32RelocationWithAddend::binary_deserialize(bytes.as_ref(), Endianness::Little).unwrap();
+//!
+//!     assert_eq!(rel, reconstructed_rel)
 //! }
 //! ```
 
@@ -52,7 +68,7 @@
 
 use core::marker::PhantomData;
 
-pub use binary_serde_macros::BinarySerde;
+pub use binary_serde_macros::{binary_serde_bitfield, BinarySerde};
 use recursive_array::{
     recursive_array_type_of_size, EmptyRecursiveArray, RecursiveArray, RecursiveArrayMultiplier,
     RecursiveArraySingleItem,
@@ -324,6 +340,141 @@ impl<R: std::io::Read> BinaryDeserializerFromStream<R> {
     /// consumes this deserializer and returns its internal stream.
     pub fn into_stream(self) -> R {
         self.stream
+    }
+}
+
+/// extracts the bits at the given range from the given byte.
+fn get_bits_of_byte(byte: u8, start_bit_index: usize, bits_amount: usize) -> u8 {
+    let mask = if bits_amount == 8 {
+        u8::MAX
+    } else {
+        (1 << bits_amount) - 1
+    };
+    (byte >> start_bit_index) & mask
+}
+
+/// a bit reader which allows reading a byte slice as a sequence of bits in an lsb first format.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct LsbBitReader<'a> {
+    bytes: &'a [u8],
+    bit_index_in_cur_byte: usize,
+    endianness: Endianness,
+    endianness_neutral_byte_index: usize,
+}
+impl<'a> LsbBitReader<'a> {
+    /// creates a new bit reader which reads from the given byte array using the given endianness.
+    pub fn new(bytes: &'a [u8], endianness: Endianness) -> Self {
+        Self {
+            bytes,
+            bit_index_in_cur_byte: 0,
+            endianness,
+            endianness_neutral_byte_index: 0,
+        }
+    }
+
+    /// returns the current byte index while taking into account the endianness.
+    pub fn cur_byte_index(&self) -> usize {
+        match self.endianness {
+            Endianness::Big => self.bytes.len() - 1 - self.endianness_neutral_byte_index,
+            Endianness::Little => self.endianness_neutral_byte_index,
+        }
+    }
+
+    /// returns the amount of bits left to read from the current byte. this is a value between 1-8 (including both ends).
+    pub fn bits_left_in_cur_byte(&self) -> usize {
+        8 - self.bit_index_in_cur_byte
+    }
+
+    /// reads the given amount of bits from this bit reader and advances the reader by the given amount.
+    /// the provided amount must be lower than or equal to the amount of bits left to read from the current byte, such
+    /// that the read doesn't require crossing a byte boundary.
+    pub fn read_bits(&mut self, bits_amount: usize) -> u8 {
+        assert!(bits_amount <= self.bits_left_in_cur_byte());
+        let cur_byte_index = self.cur_byte_index();
+        let result = get_bits_of_byte(
+            self.bytes[cur_byte_index],
+            self.bit_index_in_cur_byte,
+            bits_amount,
+        );
+
+        self.bit_index_in_cur_byte += bits_amount;
+        if self.bit_index_in_cur_byte == 8 {
+            self.endianness_neutral_byte_index += 1;
+            self.bit_index_in_cur_byte = 0;
+        }
+
+        result
+    }
+}
+
+/// a bit writer which allows writing bit sequences to a byte slice in an lsb first format.
+#[doc(hidden)]
+#[derive(Debug)]
+pub struct LsbBitWriter<'a> {
+    bytes: &'a mut [u8],
+    bit_index_in_cur_byte: usize,
+    endianness: Endianness,
+    endianness_neutral_byte_index: usize,
+}
+impl<'a> LsbBitWriter<'a> {
+    /// creates a new bit writer which writes to the given byte array using the given endianness, starting at the given bit offset.
+    pub fn new(bytes: &'a mut [u8], endianness: Endianness) -> Self {
+        Self {
+            bit_index_in_cur_byte: 0,
+            endianness,
+            endianness_neutral_byte_index: 0,
+            bytes,
+        }
+    }
+
+    /// returns the current byte index while taking into account the endianness.
+    pub fn cur_byte_index(&self) -> usize {
+        match self.endianness {
+            Endianness::Big => self.bytes.len() - 1 - self.endianness_neutral_byte_index,
+            Endianness::Little => self.endianness_neutral_byte_index,
+        }
+    }
+
+    /// returns the amount of bits left to write to the current byte. this is a value between 1-8 (including both ends).
+    pub fn bits_left_in_cur_byte(&self) -> usize {
+        8 - self.bit_index_in_cur_byte
+    }
+
+    /// writes the given amount of bits from the given bits and advances the bit writer by the given amount.
+    /// the provided amount must be lower than or equal to the amount of bits left to write from the current byte, such
+    /// that the write doesn't require crossing a byte boundary.
+    pub fn write_bits(&mut self, bits: u8, bits_amount: usize) {
+        let cur_byte_index = self.cur_byte_index();
+        self.bytes[cur_byte_index] |=
+            get_bits_of_byte(bits, 0, bits_amount) << self.bit_index_in_cur_byte;
+
+        self.bit_index_in_cur_byte += bits_amount;
+        if self.bit_index_in_cur_byte == 8 {
+            self.endianness_neutral_byte_index += 1;
+            self.bit_index_in_cur_byte = 0;
+        }
+    }
+}
+
+/// copies the given amount of bits from the `from` reader to the `to` writer.
+#[doc(hidden)]
+pub fn _copy_bits<'a, 'b>(
+    from: &mut LsbBitReader<'a>,
+    to: &mut LsbBitWriter<'b>,
+    bits_amount: usize,
+) {
+    let mut bits_left = bits_amount;
+    while bits_left > 0 {
+        // calculate the amount of bits to copy in the current iteration such that we don't cross byte boundaries both in the
+        // reader and writer, and also take into account the amount of bits left to copy.
+        let cur_amount = core::cmp::min(
+            core::cmp::min(from.bits_left_in_cur_byte(), to.bits_left_in_cur_byte()),
+            bits_left,
+        );
+
+        to.write_bits(from.read_bits(cur_amount), cur_amount);
+        bits_left -= cur_amount;
     }
 }
 
