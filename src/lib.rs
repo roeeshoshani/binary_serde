@@ -467,7 +467,8 @@ impl<'a> LsbBitWriter<'a> {
     pub fn write_bits(&mut self, bits: u8, bits_amount: usize) {
         let cur_byte_index = self.cur_byte_index();
         let mask = get_bits_mask(self.bit_index_in_cur_byte, bits_amount);
-        self.bytes[cur_byte_index] = (self.bytes[cur_byte_index] & !mask) | (bits << bits_amount);
+        self.bytes[cur_byte_index] =
+            (self.bytes[cur_byte_index] & !mask) | (bits << self.bit_index_in_cur_byte);
 
         self.bit_index_in_cur_byte += bits_amount;
         if self.bit_index_in_cur_byte == 8 {
