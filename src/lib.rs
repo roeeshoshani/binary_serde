@@ -363,6 +363,16 @@ fn get_bits_of_byte(byte: u8, start_bit_index: usize, bits_amount: usize) -> u8 
     (byte >> start_bit_index) & mask
 }
 
+/// returns a bitmask which extracts the bits at the given range from a byte.
+fn get_bits_mask(start_bit_index: usize, bits_amount: usize) -> u8 {
+    if bits_amount == 8 {
+        u8::MAX
+    } else {
+        let unshifted = (1 << bits_amount) - 1;
+        unshifted << start_bit_index
+    }
+}
+
 /// a bit reader which allows reading a byte slice as a sequence of bits in an lsb first format.
 #[doc(hidden)]
 #[derive(Debug)]
@@ -456,8 +466,8 @@ impl<'a> LsbBitWriter<'a> {
     /// that the write doesn't require crossing a byte boundary.
     pub fn write_bits(&mut self, bits: u8, bits_amount: usize) {
         let cur_byte_index = self.cur_byte_index();
-        self.bytes[cur_byte_index] |=
-            get_bits_of_byte(bits, 0, bits_amount) << self.bit_index_in_cur_byte;
+        let mask = get_bits_mask(self.bit_index_in_cur_byte, bits_amount);
+        self.bytes[cur_byte_index] = (self.bytes[cur_byte_index] & !mask) | (bits & mask);
 
         self.bit_index_in_cur_byte += bits_amount;
         if self.bit_index_in_cur_byte == 8 {
