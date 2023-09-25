@@ -47,7 +47,7 @@ pub fn binary_serde_bitfield(
                         additional_where_predicates: gen_predicates_for_field_types(field_types.clone()).collect(),
                         serialized_size: SerializedSizeExpr(quote!{#length_in_bytes}),
                         recursive_array_type: TypeExpr(quote! {
-                            ::binary_serde::recursive_array::recursive_array_type_of_size!(u8, #length_in_bytes)
+                            ::binary_serde::recursive_array::RecursiveArrayArrayWrapper<{ #length_in_bytes }, u8>
                         }),
                         serialization_code: gen_bitfield_serialization_code(
                             &field_bit_lengths,
