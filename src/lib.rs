@@ -248,6 +248,16 @@ impl BinarySerializerToVec {
         &self.buf
     }
 
+    /// returns a refernece to the underlying buffer of the serializer.
+    pub fn buffer(&self) -> &Vec<u8> {
+        &self.buf
+    }
+
+    /// returns a mutable refernece to the underlying buffer of the serializer.
+    pub fn buffer_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.buf
+    }
+
     /// consumes this serializer and returns its internal buffer.
     pub fn into_buffer(self) -> Vec<u8> {
         self.buf
