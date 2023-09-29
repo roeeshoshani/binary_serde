@@ -509,6 +509,26 @@ pub fn _copy_bits<'a, 'b>(
     }
 }
 
+/// a struct used for adding padding in the middle of your serializable structs.
+/// when serializing, it will write the `PADDING_VALUE` to the buffer `PADDING_LENGTH` times.
+/// deserializing, it will do nothing.
+pub struct BinarySerdePadding<const PADDING_LENGTH: usize, const PADDING_VALUE: u8>;
+impl<const PADDING_LENGTH: usize, const PADDING_VALUE: u8> BinarySerde
+    for BinarySerdePadding<PADDING_LENGTH, PADDING_VALUE>
+{
+    const SERIALIZED_SIZE: usize = PADDING_LENGTH;
+
+    type RecursiveArray = recursive_array_type_of_size!(u8, PADDING_LENGTH);
+
+    fn binary_serialize(&self, buf: &mut [u8], _endianness: Endianness) {
+        buf[..PADDING_LENGTH].fill(PADDING_VALUE);
+    }
+
+    fn binary_deserialize(_buf: &[u8], _endianness: Endianness) -> Result<Self, DeserializeError> {
+        Ok(Self)
+    }
+}
+
 impl BinarySerde for u8 {
     const SERIALIZED_SIZE: usize = 1;
 
