@@ -1,6 +1,6 @@
 [package]
 name = "binary_serde"
-version = "1.0.9"
+version = "1.0.10"
 edition = "2021"
 authors = ["Roee Shoshani"]
 description = "simple binary serialization and deserialization"
@@ -16,7 +16,7 @@ members = ["binary_serde_macros"]
 
 [dependencies]
 array-init = "2.1.0"
-binary_serde_macros = { path = "binary_serde_macros", version = "1.0.9" }
+binary_serde_macros = { path = "binary_serde_macros", version = "1.0.10" }
 recursive_array = "0.1.3"
 thiserror-no-std = "2.0.2"
 
