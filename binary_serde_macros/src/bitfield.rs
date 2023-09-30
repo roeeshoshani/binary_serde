@@ -8,16 +8,28 @@ use crate::{
 /// the max bit length of a single field.
 const MAX_FIELD_BIT_LENGTH: usize = 32;
 
+/// the arguments to the bitfield macro
+struct BitfieldArguments {
+    bit_order: syn::Expr,
+}
+impl syn::parse::Parse for BitfieldArguments {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let ident = input.parse::<syn::Ident>()?;
+        if ident.to_string() != "order" {
+            return Err(syn::Error::new_spanned(ident, "expected an \"order\" argument"));
+        }
+        let _ = input.parse::<syn::Token![=]>()?;
+        Ok(Self{
+            bit_order: input.parse()?
+        })
+    }
+}
+
 pub fn binary_serde_bitfield(
-    args: proc_macro::TokenStream,
+    args_tokens: proc_macro::TokenStream,
     input_tokens: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    if !args.is_empty() {
-        return quote_spanned! {
-            proc_macro2::Span::call_site() => compile_error!("this attribute does not accept any arguments");
-        }
-        .into();
-    }
+    let args = parse_macro_input!(args_tokens as BitfieldArguments);
     let mut input = parse_macro_input!(input_tokens as DeriveInput);
 
     // save a copy of the original input before messing with it
@@ -52,8 +64,9 @@ pub fn binary_serde_bitfield(
                         serialization_code: gen_bitfield_serialization_code(
                             &field_bit_lengths,
                             field_idents.clone(),
+                            &args.bit_order
                         ),
-                        deserialization_code: gen_bitfield_deserialization_code(&field_bit_lengths, field_idents, field_types),
+                        deserialization_code: gen_bitfield_deserialization_code(&field_bit_lengths, field_idents, field_types, &args.bit_order),
                         type_ident: original_input.ident,
                         generics: original_input.generics,
                     });
@@ -151,8 +164,9 @@ fn extract_field_bit_lengths(
 fn gen_bitfield_serialization_code(
     field_bit_lengths: &[usize],
     field_idents: impl Iterator<Item = syn::Ident>,
+    bit_order: &syn::Expr,
 ) -> proc_macro2::TokenStream {
-    let field_serializations =
+    let field_serializations: Vec<proc_macro2::TokenStream> =
         field_idents
             .zip(field_bit_lengths)
             .map(|(field_ident, bit_length)| {
@@ -171,13 +185,26 @@ fn gen_bitfield_serialization_code(
                         );
                     }
                 }
-            });
+            }).collect();
+    let field_serializations_reversed = {
+        let mut reversed = field_serializations.clone();
+        reversed.reverse();
+        reversed
+    };
     quote! {
         let mut writer = ::binary_serde::LsbBitWriter::new(
             buf,
             endianness,
         );
-        #(#field_serializations)*
+        let bit_order: ::binary_serde::BitfieldBitOrder = #bit_order;
+        match bit_order {
+            ::binary_serde::BitfieldBitOrder::LsbFirst => {
+                #(#field_serializations)*
+            },
+            ::binary_serde::BitfieldBitOrder::MsbFirst => {
+                #(#field_serializations_reversed)*
+            },
+        }
     }
 }
 
@@ -186,8 +213,9 @@ fn gen_bitfield_deserialization_code(
     field_bit_lengths: &[usize],
     field_idents: impl Iterator<Item = syn::Ident>,
     field_types: impl Iterator<Item = TypeExpr>,
+    bit_order: &syn::Expr
 ) -> proc_macro2::TokenStream {
-    let field_initializers = field_idents.zip(field_types).zip(field_bit_lengths).map(
+    let field_initializers: Vec<proc_macro2::TokenStream> = field_idents.zip(field_types).zip(field_bit_lengths).map(
         |((field_ident, field_type), bit_length)| {
             let recursive_array_type = field_type.serialized_recursive_array_type();
             quote! {
@@ -209,14 +237,29 @@ fn gen_bitfield_deserialization_code(
                 }
             }
         },
-    );
+    ).collect();
+    let field_initializers_reversed = {
+        let mut reversed = field_initializers.clone();
+        reversed.reverse();
+        reversed
+    };
     quote! {
         let mut reader = ::binary_serde::LsbBitReader::new(
             buf,
             endianness,
         );
-        Ok(Self {
-            #(#field_initializers,)*
-        })
+        let bit_order: ::binary_serde::BitfieldBitOrder = #bit_order;
+        match bit_order {
+            ::binary_serde::BitfieldBitOrder::LsbFirst => {
+                Ok(Self {
+                    #(#field_initializers,)*
+                })
+            },
+            ::binary_serde::BitfieldBitOrder::MsbFirst => {
+                Ok(Self {
+                    #(#field_initializers_reversed,)*
+                })
+            },
+        }
     }
 }

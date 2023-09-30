@@ -44,7 +44,7 @@
 //! }
 //!
 //! #[derive(Debug, Default, PartialEq, Eq)]
-//! #[binary_serde_bitfield]
+//! #[binary_serde_bitfield(order = BitfieldBitOrder::LsbFirst)]
 //! struct Elf32RelocationInfo {
 //!     #[bits(8)]
 //!     ty: Elf32RelocationType,
@@ -92,6 +92,15 @@ use thiserror_no_std::Error;
 pub enum Endianness {
     Big,
     Little,
+}
+
+/// the bit order of a bitfield.
+pub enum BitfieldBitOrder {
+    /// the bitfield is msb first, which means that the bits of the first field will be placed at the msb.
+    MsbFirst,
+
+    /// the bitfield is lsb first, which means that the bits of the first field will be placed at the lsb.
+    LsbFirst,
 }
 
 /// a trait for serializing and deserializing a type into a packed binary format.
