@@ -46,7 +46,7 @@ enum Elf32RelocationType {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-#[binary_serde_bitfield]
+#[binary_serde_bitfield(order = BitfieldBitOrder::LsbFirst)]
 struct Elf32RelocationInfo {
     #[bits(8)]
     ty: Elf32RelocationType,
