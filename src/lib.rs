@@ -520,10 +520,6 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
     }
 
     /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
-    ///
-    /// # Panics
-    ///
-    /// this function panics if the deserialization exceeds the bounds of the buffer.
     pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, DeserializeFromBufSafeError> {
         // make sure that the start index is in range
         self.check_index(self.position)?;
