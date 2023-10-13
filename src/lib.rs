@@ -206,6 +206,22 @@ pub enum DeserializeFromError {
     ),
 }
 
+/// an error which can occur while deserializing from a safe buffer deserializer.
+#[derive(Debug, Error)]
+pub enum DeserializeFromBufSafeError {
+    /// a deserialization error occured while trying to deserialize the bytes that were read from the buffer.
+    #[error("deserialization error")]
+    DeserializeError(
+        #[from]
+        #[source]
+        DeserializeError,
+    ),
+
+    /// the index is out of the bounds of the buffer
+    #[error("index {index} is out of bounds of buffer of len {buf_len}")]
+    OutOfBounds { index: usize, buf_len: usize },
+}
+
 /// binary serializes the given value using the given endianness into the given vector.
 #[cfg(feature = "std")]
 pub fn binary_serialize_into_vec<T: BinarySerde>(
@@ -319,6 +335,78 @@ impl<'a> BinaryDeserializerFromBuf<'a> {
     ///
     /// this function panics if the deserialization exceeds the bounds of the buffer.
     pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, DeserializeError> {
+        let result = T::binary_deserialize(
+            &self.buf[self.position..][..T::SERIALIZED_SIZE],
+            self.endianness,
+        )?;
+        self.position += T::SERIALIZED_SIZE;
+        Ok(result)
+    }
+
+    /// returns the current position of this deserializer in the buffer.
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// sets the position of this deserializer in the buffer.
+    pub fn set_position(&mut self, new_position: usize) {
+        self.position = new_position;
+    }
+
+    /// moves this deserializer's position forwards according to the given amount.
+    pub fn move_forwards(&mut self, amount: usize) {
+        self.position += amount;
+    }
+
+    /// moves this deserializer's position backwards according to the given amount.
+    pub fn move_backwards(&mut self, amount: usize) {
+        self.position -= amount;
+    }
+}
+
+/// a deserializer which deserializes values from a buffer and performs bounds checks on the buffer when deserializing
+/// to avoid panics.
+pub struct BinaryDeserializerFromBufSafe<'a> {
+    buf: &'a [u8],
+    endianness: Endianness,
+    position: usize,
+}
+impl<'a> BinaryDeserializerFromBufSafe<'a> {
+    /// creates a new deserializer which deserializes values from the given buffer using the given endianness.
+    pub fn new(buf: &'a [u8], endianness: Endianness) -> Self {
+        Self {
+            buf,
+            endianness,
+            position: 0,
+        }
+    }
+
+    /// checks that the given index is in range of the buffer, and if it is not, returns an error.
+    fn check_index(&self, index: usize) -> Result<(), DeserializeFromBufSafeError> {
+        if index < self.buf.len() {
+            Ok(())
+        } else {
+            Err(DeserializeFromBufSafeError::OutOfBounds {
+                index,
+                buf_len: self.buf.len(),
+            })
+        }
+    }
+
+    /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
+    ///
+    /// # Panics
+    ///
+    /// this function panics if the deserialization exceeds the bounds of the buffer.
+    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, DeserializeFromBufSafeError> {
+        // make sure that the start index is in range
+        self.check_index(self.position)?;
+
+        // if the end index is not the same as the start index, make sure that it is also in range
+        if T::SERIALIZED_SIZE > 1 {
+            self.check_index(self.position + T::SERIALIZED_SIZE - 1)?;
+        }
+
         let result = T::binary_deserialize(
             &self.buf[self.position..][..T::SERIALIZED_SIZE],
             self.endianness,
