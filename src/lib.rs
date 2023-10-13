@@ -208,7 +208,7 @@ pub enum DeserializeFromError {
 
 /// an error which can occur while serializing/deserializing to/from a safe buffer serializer/deserializer.
 #[derive(Debug, Error)]
-pub enum SerdeBufSafeError {
+pub enum BinarySerdeBufSafeError {
     /// a deserialization error occured while trying to deserialize the bytes that were read from the buffer.
     #[error("deserialization error")]
     DeserializeError(
@@ -446,11 +446,11 @@ impl<'a> BinarySerdeBufSafe<'a> {
     }
 
     /// checks that the given index is in range of the buffer, and if it is not, returns an error.
-    fn check_index(&self, index: usize) -> Result<(), SerdeBufSafeError> {
+    fn check_index(&self, index: usize) -> Result<(), BinarySerdeBufSafeError> {
         if index < self.buf.len() {
             Ok(())
         } else {
-            Err(SerdeBufSafeError::OutOfBounds {
+            Err(BinarySerdeBufSafeError::OutOfBounds {
                 index,
                 buf_len: self.buf.len(),
             })
@@ -458,7 +458,7 @@ impl<'a> BinarySerdeBufSafe<'a> {
     }
 
     /// serializes a value of type `T` into the current position in the buffer, and advances the position accordingly.
-    pub fn serialize<T: BinarySerde>(&mut self, value: &T) -> Result<(), SerdeBufSafeError> {
+    pub fn serialize<T: BinarySerde>(&mut self, value: &T) -> Result<(), BinarySerdeBufSafeError> {
         // make sure that the start index is in range
         self.check_index(self.position)?;
 
@@ -477,7 +477,7 @@ impl<'a> BinarySerdeBufSafe<'a> {
     }
 
     /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
-    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, SerdeBufSafeError> {
+    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, BinarySerdeBufSafeError> {
         // make sure that the start index is in range
         self.check_index(self.position)?;
 
@@ -532,11 +532,11 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
     }
 
     /// checks that the given index is in range of the buffer, and if it is not, returns an error.
-    fn check_index(&self, index: usize) -> Result<(), SerdeBufSafeError> {
+    fn check_index(&self, index: usize) -> Result<(), BinarySerdeBufSafeError> {
         if index < self.buf.len() {
             Ok(())
         } else {
-            Err(SerdeBufSafeError::OutOfBounds {
+            Err(BinarySerdeBufSafeError::OutOfBounds {
                 index,
                 buf_len: self.buf.len(),
             })
@@ -544,7 +544,7 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
     }
 
     /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
-    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, SerdeBufSafeError> {
+    pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, BinarySerdeBufSafeError> {
         // make sure that the start index is in range
         self.check_index(self.position)?;
 
