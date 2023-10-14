@@ -286,6 +286,11 @@ impl BinarySerializerToVec {
     pub fn into_buffer(self) -> Vec<u8> {
         self.buf
     }
+
+    /// sets the endianness of this serializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
+    }
 }
 
 /// a serializer which serializes value into a data stream.
@@ -309,6 +314,21 @@ impl<W: std::io::Write> BinarySerializerToStream<W> {
     /// consumes this serializer and returns its internal stream.
     pub fn into_stream(self) -> W {
         self.stream
+    }
+
+    /// returns a refernece to the underlying stream of this serializer
+    pub fn stream(&self) -> &W {
+        &self.stream
+    }
+
+    /// returns a mutable refernece to the underlying stream of this serializer
+    pub fn stream_mut(&mut self) -> &mut W {
+        &mut self.stream
+    }
+
+    /// sets the endianness of this serializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
     }
 }
 
@@ -360,6 +380,16 @@ impl<'a> BinaryDeserializerFromBuf<'a> {
     /// moves this deserializer's position backwards according to the given amount.
     pub fn move_backwards(&mut self, amount: usize) {
         self.position -= amount;
+    }
+
+    /// sets the endianness of this deserializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
+    }
+
+    /// returns a reference to the underlying buffer of this deserializer
+    pub fn buf(&self) -> &'a [u8] {
+        self.buf
     }
 }
 
@@ -424,6 +454,16 @@ impl<'a> BinarySerdeBuf<'a> {
     /// moves this deserializer's position backwards according to the given amount.
     pub fn move_backwards(&mut self, amount: usize) {
         self.position -= amount;
+    }
+
+    /// sets the endianness of this serializer/deserializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
+    }
+
+    /// returns a reference to the underlying buffer of this serializer/deserializer.
+    pub fn buf(&mut self) -> &mut [u8] {
+        self.buf
     }
 }
 
@@ -512,6 +552,16 @@ impl<'a> BinarySerdeBufSafe<'a> {
     pub fn move_backwards(&mut self, amount: usize) {
         self.position -= amount;
     }
+
+    /// sets the endianness of this serializer/deserializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
+    }
+
+    /// returns a reference to the underlying buffer of this serializer/deserializer.
+    pub fn buf(&mut self) -> &mut [u8] {
+        self.buf
+    }
 }
 
 /// a deserializer which deserializes values from a buffer and performs bounds checks on the buffer when deserializing
@@ -580,6 +630,16 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
     pub fn move_backwards(&mut self, amount: usize) {
         self.position -= amount;
     }
+
+    /// sets the endianness of this deserializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
+    }
+
+    /// returns a reference to the underlying buffer of this deserializer.
+    pub fn buf(&self) -> &'a [u8] {
+        self.buf
+    }
 }
 
 #[cfg(feature = "std")]
@@ -603,6 +663,21 @@ impl<R: std::io::Read> BinaryDeserializerFromStream<R> {
     /// consumes this deserializer and returns its internal stream.
     pub fn into_stream(self) -> R {
         self.stream
+    }
+
+    /// returns a refernece to the underlying stream of this deserializer
+    pub fn stream(&self) -> &R {
+        &self.stream
+    }
+
+    /// returns a mutable refernece to the underlying stream of this deserializer
+    pub fn stream_mut(&mut self) -> &mut R {
+        &mut self.stream
+    }
+
+    /// sets the endianness of this deserializer
+    pub fn set_endianness(&mut self, new_endianness: Endianness) {
+        self.endianness = new_endianness
     }
 }
 
