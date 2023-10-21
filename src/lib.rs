@@ -240,6 +240,7 @@ pub fn binary_serialize_into_vec<T: BinarySerde>(
 
 /// a serializer which serializes value into a vector of bytes.
 #[cfg(feature = "std")]
+#[derive(Clone)]
 pub struct BinarySerializerToVec {
     buf: Vec<u8>,
     endianness: Endianness,
@@ -295,6 +296,7 @@ impl BinarySerializerToVec {
 
 /// a serializer which serializes value into a data stream.
 #[cfg(feature = "std")]
+#[derive(Clone)]
 pub struct BinarySerializerToStream<W: std::io::Write> {
     stream: W,
     endianness: Endianness,
@@ -333,6 +335,7 @@ impl<W: std::io::Write> BinarySerializerToStream<W> {
 }
 
 /// a deserializer which deserializes values from a buffer.
+#[derive(Clone)]
 pub struct BinaryDeserializerFromBuf<'a> {
     buf: &'a [u8],
     endianness: Endianness,
@@ -566,6 +569,7 @@ impl<'a> BinarySerdeBufSafe<'a> {
 
 /// a deserializer which deserializes values from a buffer and performs bounds checks on the buffer when deserializing
 /// to avoid panics.
+#[derive(Clone)]
 pub struct BinaryDeserializerFromBufSafe<'a> {
     buf: &'a [u8],
     endianness: Endianness,
@@ -642,8 +646,9 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
     }
 }
 
-#[cfg(feature = "std")]
 /// a deserializer which deserializes values from a data stream.
+#[cfg(feature = "std")]
+#[derive(Clone)]
 pub struct BinaryDeserializerFromStream<R: std::io::Read> {
     stream: R,
     endianness: Endianness,
@@ -703,7 +708,7 @@ fn get_bits_mask(start_bit_index: usize, bits_amount: usize) -> u8 {
 
 /// a bit reader which allows reading a byte slice as a sequence of bits in an lsb first format.
 #[doc(hidden)]
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct LsbBitReader<'a> {
     bytes: &'a [u8],
     bit_index_in_cur_byte: usize,
@@ -758,7 +763,6 @@ impl<'a> LsbBitReader<'a> {
 
 /// a bit writer which allows writing bit sequences to a byte slice in an lsb first format.
 #[doc(hidden)]
-#[derive(Debug)]
 pub struct LsbBitWriter<'a> {
     bytes: &'a mut [u8],
     bit_index_in_cur_byte: usize,
