@@ -848,6 +848,44 @@ impl<const PADDING_LENGTH: usize, const PADDING_VALUE: u8> BinarySerde
     }
 }
 
+/// implements the [`BinarySerde`] trait for a type generated using the `bitflags!` macro from the `bitflags` crate.
+#[macro_export]
+macro_rules! impl_binary_serde_for_bitflags_ty {
+    {$bitflags_ty: ty} => {
+        impl ::binary_serde::BinarySerde for $bitflags_ty
+        where
+            <$bitflags_ty as ::bitflags::Flags>::Bits: ::binary_serde::BinarySerde,
+        {
+            const SERIALIZED_SIZE: usize =
+                <<$bitflags_ty as ::bitflags::Flags>::Bits as ::binary_serde::BinarySerde>::SERIALIZED_SIZE;
+
+            type RecursiveArray =
+                <<$bitflags_ty as ::bitflags::Flags>::Bits as ::binary_serde::BinarySerde>::RecursiveArray;
+
+            fn binary_serialize(&self, buf: &mut [u8], endianness: ::binary_serde::Endianness) {
+                let bits = ::bitflags::Flags::bits(self);
+                ::binary_serde::BinarySerde::binary_serialize(&bits, buf, endianness)
+            }
+
+            fn binary_deserialize(
+                buf: &[u8],
+                endianness: ::binary_serde::Endianness,
+            ) -> Result<Self, ::binary_serde::DeserializeError> {
+                let bits = ::binary_serde::BinarySerde::binary_deserialize(buf, endianness)?;
+                Ok(::bitflags::Flags::from_bits_retain(bits))
+            }
+
+            fn binary_serialize_to_array(
+                &self,
+                endianness: ::binary_serde::Endianness,
+            ) -> Self::RecursiveArray {
+                let bits = ::bitflags::Flags::bits(self);
+                ::binary_serde::BinarySerde::binary_serialize_to_array(&bits, endianness)
+            }
+        }
+    };
+}
+
 impl BinarySerde for u8 {
     const SERIALIZED_SIZE: usize = 1;
 
