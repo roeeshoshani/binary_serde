@@ -181,7 +181,7 @@ fn gen_enum_deserialization_code(
         .map(|(variant, const_ident)| {
             let variant_ident = &variant.ident;
             quote! {
-                #[allow(non_uppercase_globals)]
+                #[allow(non_upper_case_globals)]
                 const #const_ident: #enum_repr_type = (#enum_ident::#variant_ident) as #enum_repr_type;
             }
         });
