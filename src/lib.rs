@@ -292,6 +292,11 @@ impl BinarySerializerToVec {
     pub fn set_endianness(&mut self, new_endianness: Endianness) {
         self.endianness = new_endianness
     }
+
+    /// returns the endianness of this serializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
+    }
 }
 
 /// a serializer which serializes value into a data stream.
@@ -331,6 +336,11 @@ impl<W: std::io::Write> BinarySerializerToStream<W> {
     /// sets the endianness of this serializer
     pub fn set_endianness(&mut self, new_endianness: Endianness) {
         self.endianness = new_endianness
+    }
+
+    /// returns the endianness of this serializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
     }
 }
 
@@ -388,6 +398,11 @@ impl<'a> BinaryDeserializerFromBuf<'a> {
     /// sets the endianness of this deserializer
     pub fn set_endianness(&mut self, new_endianness: Endianness) {
         self.endianness = new_endianness
+    }
+
+    /// returns the endianness of this deserializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
     }
 
     /// returns a reference to the underlying buffer of this deserializer
@@ -462,6 +477,11 @@ impl<'a> BinarySerdeBuf<'a> {
     /// sets the endianness of this serializer/deserializer
     pub fn set_endianness(&mut self, new_endianness: Endianness) {
         self.endianness = new_endianness
+    }
+
+    /// returns the endianness of this serializer/deserializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
     }
 
     /// returns a reference to the underlying buffer of this serializer/deserializer.
@@ -561,6 +581,11 @@ impl<'a> BinarySerdeBufSafe<'a> {
         self.endianness = new_endianness
     }
 
+    /// returns the endianness of this serializer/deserializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
+    }
+
     /// returns a reference to the underlying buffer of this serializer/deserializer.
     pub fn buf(&mut self) -> &mut [u8] {
         self.buf
@@ -640,6 +665,11 @@ impl<'a> BinaryDeserializerFromBufSafe<'a> {
         self.endianness = new_endianness
     }
 
+    /// returns the endianness of this deserializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
+    }
+
     /// returns a reference to the underlying buffer of this deserializer.
     pub fn buf(&self) -> &'a [u8] {
         self.buf
@@ -683,6 +713,11 @@ impl<R: std::io::Read> BinaryDeserializerFromStream<R> {
     /// sets the endianness of this deserializer
     pub fn set_endianness(&mut self, new_endianness: Endianness) {
         self.endianness = new_endianness
+    }
+
+    /// returns the endianness of this deserializer.
+    pub fn endianness(&self) -> Endianness {
+        self.endianness
     }
 }
 
