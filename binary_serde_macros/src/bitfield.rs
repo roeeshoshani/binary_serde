@@ -1,4 +1,4 @@
-use quote::{quote, quote_spanned};
+use quote::{quote, quote_spanned, ToTokens};
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
 
 use crate::{
@@ -8,19 +8,46 @@ use crate::{
 /// the max bit length of a single field.
 const MAX_FIELD_BIT_LENGTH: usize = 32;
 
+/// extracts the bit length of an unsigned integer type.
+/// if the given string does not represent an explicitly sized unsigned integer type, returns `None`.
+/// for example, for an input of `"u32"`, the value `32` will be returned.
+fn extract_unsigned_int_type_bit_length(s: &str) -> Option<usize> {
+    if !s.starts_with('u') {
+        return None;
+    }
+    s[1..].parse().ok()
+}
+
 /// the arguments to the bitfield macro
 struct BitfieldArguments {
+    repr_type: syn::Type,
+    repr_type_bit_length: usize,
     bit_order: syn::Expr,
 }
 impl syn::parse::Parse for BitfieldArguments {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let repr_type = input.parse::<syn::Type>()?;
+        let repr_type_str = repr_type.to_token_stream().to_string();
+        let repr_type_bit_length = extract_unsigned_int_type_bit_length(&repr_type_str)
+            .ok_or_else(|| {
+                syn::Error::new_spanned(
+                    &repr_type,
+                    "expected an explicitly sized unsigned integer type (e.g. `u32`)",
+                )
+            })?;
+        let _ = input.parse::<syn::Token![,]>()?;
         let ident = input.parse::<syn::Ident>()?;
         if ident.to_string() != "order" {
-            return Err(syn::Error::new_spanned(ident, "expected an \"order\" argument"));
+            return Err(syn::Error::new_spanned(
+                ident,
+                "expected an \"order\" argument",
+            ));
         }
         let _ = input.parse::<syn::Token![=]>()?;
-        Ok(Self{
-            bit_order: input.parse()?
+        Ok(Self {
+            repr_type,
+            repr_type_bit_length,
+            bit_order: input.parse()?,
         })
     }
 }
@@ -39,28 +66,27 @@ pub fn binary_serde_bitfield(
         syn::Data::Struct(data_struct) => {
             match &mut data_struct.fields {
                 syn::Fields::Named(named_fields) => {
-                    let field_bit_lengths = match extract_field_bit_lengths(named_fields){
+                    let field_bit_lengths = match extract_field_bit_lengths(named_fields) {
                         Ok(v) => v,
                         Err(err) => return err.into(),
                     };
                     let total_bit_length: usize = field_bit_lengths.iter().sum();
-                    if total_bit_length % 8 != 0 {
-                        let error_msg = format!("the total bit length of a bitfield must be byte aligned, but the total bit length of the bitfield is {}, which is not byte aligned", total_bit_length);
+                    if total_bit_length != args.repr_type_bit_length {
+                        let error_msg = format!("total bit length of fields is {}, but the expected total bit length is {}", total_bit_length, args.repr_type_bit_length);
                         return quote_spanned!{
                             proc_macro2::Span::call_site() => compile_error!(#error_msg);
                         }.into()
+                        
                     }
-                    let length_in_bytes = total_bit_length / 8;
                     let field_types = named_fields.named.iter()
                         .map(|field| TypeExpr::from_type(&field.ty));
-                    let field_idents = 
+                    let field_idents =
                             named_fields.named.iter().map(|field| field.ident.as_ref().cloned().unwrap());
+                    let repr_type_expr = TypeExpr(args.repr_type.to_token_stream());
                     let trait_impl = gen_impl(GenImplParams {
                         additional_where_predicates: gen_predicates_for_field_types(field_types.clone()).collect(),
-                        serialized_size: SerializedSizeExpr(quote!{#length_in_bytes}),
-                        recursive_array_type: TypeExpr(quote! {
-                            ::binary_serde::recursive_array::RecursiveArrayArrayWrapper<{ #length_in_bytes }, u8>
-                        }),
+                        serialized_size: repr_type_expr.serialized_size(),
+                        recursive_array_type: repr_type_expr.serialized_recursive_array_type(),
                         serialization_code: gen_bitfield_serialization_code(
                             &field_bit_lengths,
                             field_idents.clone(),
@@ -165,27 +191,31 @@ fn gen_bitfield_serialization_code(
     field_bit_lengths: &[usize],
     field_idents: impl Iterator<Item = syn::Ident>,
     bit_order: &syn::Expr,
+    repr_type: &syn::Type,
 ) -> proc_macro2::TokenStream {
-    let field_serializations: Vec<proc_macro2::TokenStream> =
-        field_idents
-            .zip(field_bit_lengths)
-            .map(|(field_ident, bit_length)| {
-                quote! {
-                    {
-                        let serialized = ::binary_serde::BinarySerde::binary_serialize_to_array(
-                            &self.#field_ident,
-                            endianness
-                        );
-                        let mut reader = ::binary_serde::LsbBitReader::new(
-                            ::binary_serde::recursive_array::RecursiveArray::as_slice(&serialized),
-                            endianness,
-                        );
-                        ::binary_serde::_copy_bits(
-                            &mut reader, &mut writer, #bit_length
-                        );
-                    }
+    let x = quote! {
+        let mut result: #repr_type = 0;
+    };
+    let field_serializations: Vec<proc_macro2::TokenStream> = field_idents
+        .zip(field_bit_lengths)
+        .map(|(field_ident, bit_length)| {
+            quote! {
+                {
+                    let serialized = ::binary_serde::BinarySerde::binary_serialize_to_array(
+                        &self.#field_ident,
+                        endianness
+                    );
+                    let mut reader = ::binary_serde::LsbBitReader::new(
+                        ::binary_serde::recursive_array::RecursiveArray::as_slice(&serialized),
+                        endianness,
+                    );
+                    ::binary_serde::_copy_bits(
+                        &mut reader, &mut writer, #bit_length
+                    );
                 }
-            }).collect();
+            }
+        })
+        .collect();
     let field_serializations_reversed = {
         let mut reversed = field_serializations.clone();
         reversed.reverse();
@@ -213,10 +243,12 @@ fn gen_bitfield_deserialization_code(
     field_bit_lengths: &[usize],
     field_idents: impl Iterator<Item = syn::Ident>,
     field_types: impl Iterator<Item = TypeExpr>,
-    bit_order: &syn::Expr
+    bit_order: &syn::Expr,
 ) -> proc_macro2::TokenStream {
-    let field_initializers: Vec<proc_macro2::TokenStream> = field_idents.zip(field_types).zip(field_bit_lengths).map(
-        |((field_ident, field_type), bit_length)| {
+    let field_initializers: Vec<proc_macro2::TokenStream> = field_idents
+        .zip(field_types)
+        .zip(field_bit_lengths)
+        .map(|((field_ident, field_type), bit_length)| {
             let recursive_array_type = field_type.serialized_recursive_array_type();
             quote! {
                 #field_ident: {
@@ -236,8 +268,8 @@ fn gen_bitfield_deserialization_code(
                     )?
                 }
             }
-        },
-    ).collect();
+        })
+        .collect();
     let field_initializers_reversed = {
         let mut reversed = field_initializers.clone();
         reversed.reverse();
