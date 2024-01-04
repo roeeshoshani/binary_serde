@@ -93,6 +93,12 @@ pub enum Endianness {
     Big,
     Little,
 }
+impl Endianness {
+    #[cfg(target_endian = "little")]
+    pub const NATIVE: Self = Endianness::Little;
+    #[cfg(target_endian = "big")]
+    pub const NATIVE: Self = Endianness::Big;
+}
 
 /// the bit order of a bitfield.
 pub enum BitfieldBitOrder {
