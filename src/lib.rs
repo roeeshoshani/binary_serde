@@ -447,6 +447,17 @@ impl<'a> BinarySerdeBuf<'a> {
         self.position += T::SERIALIZED_SIZE;
     }
 
+    /// consumes and returns the next `amount` bytes from the current position in the buffer, and advances the position accordingly.
+    ///
+    /// # Panics
+    ///
+    /// this function panics if the requested amount of bytes exceeds the bounds of the buffer.
+    pub fn consume_bytes(&mut self, amount: usize) -> &[u8] {
+        let result = &self.buf[self.position..][..amount];
+        self.position += amount;
+        result
+    }
+
     /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
     ///
     /// # Panics
@@ -460,6 +471,7 @@ impl<'a> BinarySerdeBuf<'a> {
         self.position += T::SERIALIZED_SIZE;
         Ok(result)
     }
+
     /// returns the current position of this deserializer in the buffer.
     pub fn position(&self) -> usize {
         self.position
@@ -545,6 +557,22 @@ impl<'a> BinarySerdeBufSafe<'a> {
         Ok(())
     }
 
+    /// consumes and returns the next `amount` bytes from the current position in the buffer, and advances the position accordingly.
+    pub fn consume_bytes(&mut self, amount: usize) -> Result<&[u8], BinarySerdeBufSafeError> {
+        // make sure that the start index is in range
+        self.check_index(self.position)?;
+
+        // if the end index is not the same as the start index, make sure that it is also in range
+        if amount > 1 {
+            self.check_index(self.position + amount - 1)?;
+        }
+
+        let result = &self.buf[self.position..][..amount];
+        self.position += amount;
+
+        Ok(result)
+    }
+
     /// deserializes a value of type `T` from the current position in the buffer, and advances the position accordingly.
     pub fn deserialize<T: BinarySerde>(&mut self) -> Result<T, BinarySerdeBufSafeError> {
         // make sure that the start index is in range
@@ -562,6 +590,7 @@ impl<'a> BinarySerdeBufSafe<'a> {
         self.position += T::SERIALIZED_SIZE;
         Ok(result)
     }
+
     /// returns the current position of this deserializer in the buffer.
     pub fn position(&self) -> usize {
         self.position
